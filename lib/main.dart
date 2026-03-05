@@ -2069,29 +2069,29 @@ class _EmptyVehiclesState extends StatelessWidget {
                   letterSpacing: 1.2,
                 ),
               ),
-              const SizedBox(height: 16),
-              const _OnboardingStep(
+              SizedBox(height: 16),
+              _OnboardingStep(
                 number: '1',
                 title: 'Add a vehicle',
                 description: 'Enter the year, make and model of the car you\'re pulling apart.',
                 icon: Icons.directions_car_outlined,
               ),
-              const SizedBox(height: 14),
-              const _OnboardingStep(
+              SizedBox(height: 14),
+              _OnboardingStep(
                 number: '2',
                 title: 'Log each part as you pull it',
                 description: 'Record the part name, location in your yard, part number and asking price.',
                 icon: Icons.inventory_2_outlined,
               ),
-              const SizedBox(height: 14),
-              const _OnboardingStep(
+              SizedBox(height: 14),
+              _OnboardingStep(
                 number: '3',
                 title: 'Track your listings',
                 description: 'Add eBay or Facebook links to each part so you know what\'s live and what\'s not.',
                 icon: Icons.storefront_outlined,
               ),
-              const SizedBox(height: 14),
-              const _OnboardingStep(
+              SizedBox(height: 14),
+              _OnboardingStep(
                 number: '4',
                 title: 'Mark parts as sold',
                 description: 'Tap the three-dot menu on any part to mark it sold and record the sale price.',
