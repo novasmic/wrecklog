@@ -23,6 +23,7 @@ dependencies:
   package_info_plus: ^8.0.0
   gal: ^2.3.0
   archive: ^3.6.1
+  web: ^0.5.1
 
 dev_dependencies:
   flutter_test:

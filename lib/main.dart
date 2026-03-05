@@ -1,6 +1,6 @@
 // lib/main.dart
 import 'dart:convert';
-import 'dart:math' as _math;
+import 'dart:math' as math;
 import 'io_file_stub.dart' if (dart.library.io) 'io_file_io.dart';
 import 'home_screen.dart';
 
@@ -834,7 +834,7 @@ String generateUniqueStockId(List<Vehicle> allVehicles) {
 }
 
 String _generateStockId(Set<String> existing) {
-  final rng = _math.Random.secure();
+  final rng = math.Random.secure();
   while (true) {
     final suffix = List.generate(6, (_) => _stockIdChars[rng.nextInt(_stockIdChars.length)]).join();
     final candidate = 'WL-$suffix';
@@ -1170,11 +1170,13 @@ Future<void> openUrlEasy(BuildContext context, String url) async {
       mode: LaunchMode.platformDefault,
       webOnlyWindowName: '_blank',
     );
-    if (!ok) {
+    if (!ok && context.mounted) {
       await copyToClipboard(context, url, message: 'Could not open - link copied');
     }
   } catch (_) {
-    await copyToClipboard(context, url, message: 'Could not open - link copied');
+    if (context.mounted) {
+      await copyToClipboard(context, url, message: 'Could not open - link copied');
+    }
   }
 }
 
@@ -2068,28 +2070,28 @@ class _EmptyVehiclesState extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              _OnboardingStep(
+              const _OnboardingStep(
                 number: '1',
                 title: 'Add a vehicle',
                 description: 'Enter the year, make and model of the car you\'re pulling apart.',
                 icon: Icons.directions_car_outlined,
               ),
               const SizedBox(height: 14),
-              _OnboardingStep(
+              const _OnboardingStep(
                 number: '2',
                 title: 'Log each part as you pull it',
                 description: 'Record the part name, location in your yard, part number and asking price.',
                 icon: Icons.inventory_2_outlined,
               ),
               const SizedBox(height: 14),
-              _OnboardingStep(
+              const _OnboardingStep(
                 number: '3',
                 title: 'Track your listings',
                 description: 'Add eBay or Facebook links to each part so you know what\'s live and what\'s not.',
                 icon: Icons.storefront_outlined,
               ),
               const SizedBox(height: 14),
-              _OnboardingStep(
+              const _OnboardingStep(
                 number: '4',
                 title: 'Mark parts as sold',
                 description: 'Tap the three-dot menu on any part to mark it sold and record the sale price.',
@@ -2219,13 +2221,16 @@ class VehicleCard extends StatelessWidget {
 
     // Stat line: kms (most important) · parts · in stock · P/L
     final statParts = <String>[];
-    if (vehicle.usageValue != null)
+    if (vehicle.usageValue != null) {
       statParts.add('${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}');
+    }
     statParts.add('${vehicle.partsCount} parts');
-    if (vehicle.inStockCount > 0)
+    if (vehicle.inStockCount > 0) {
       statParts.add('${vehicle.inStockCount} in stock');
-    if (vehicle.listedLiveCount > 0)
+    }
+    if (vehicle.listedLiveCount > 0) {
       statParts.add('${vehicle.listedLiveCount} listed');
+    }
     // Only show P/L when there are parts — no parts means $0 is meaningless.
     final showPL = vehicle.partsCount > 0;
     final plStr = formatMoneyFromCents(pl);
@@ -2434,7 +2439,6 @@ class _ModelAutocompleteField extends StatefulWidget {
   final ItemType itemType;
   final String make;
   final String? Function(String?)? validator;
-  final TextInputAction textInputAction;
 
   const _ModelAutocompleteField({
     super.key,
@@ -2442,7 +2446,6 @@ class _ModelAutocompleteField extends StatefulWidget {
     required this.itemType,
     required this.make,
     this.validator,
-    this.textInputAction = TextInputAction.next,
   });
 
   @override
@@ -2515,7 +2518,7 @@ class _ModelAutocompleteFieldState extends State<_ModelAutocompleteField> {
           prefixIcon: Icon(modelIcon),
         ),
         validator: widget.validator,
-        textInputAction: widget.textInputAction,
+        textInputAction: TextInputAction.next,
         textCapitalization: TextCapitalization.words,
       );
     }
@@ -2542,7 +2545,7 @@ class _ModelAutocompleteFieldState extends State<_ModelAutocompleteField> {
             prefixIcon: Icon(modelIcon),
           ),
           validator: widget.validator,
-          textInputAction: widget.textInputAction,
+          textInputAction: TextInputAction.next,
           textCapitalization: TextCapitalization.words,
           onFieldSubmitted: (_) => onFieldSubmitted(),
         );
@@ -2584,7 +2587,6 @@ class _MakeAutocompleteField extends StatelessWidget {
   final TextEditingController controller;
   final ItemType itemType;
   final String? Function(String?)? validator;
-  final TextInputAction textInputAction;
   final void Function(String)? onMakeChanged;
 
   const _MakeAutocompleteField({
@@ -2592,7 +2594,6 @@ class _MakeAutocompleteField extends StatelessWidget {
     required this.controller,
     required this.itemType,
     this.validator,
-    this.textInputAction = TextInputAction.next,
     this.onMakeChanged,
   });
 
@@ -2611,7 +2612,7 @@ class _MakeAutocompleteField extends StatelessWidget {
         ),
         onChanged: onMakeChanged,
         validator: validator,
-        textInputAction: textInputAction,
+        textInputAction: TextInputAction.next,
         textCapitalization: TextCapitalization.words,
       );
     }
@@ -2640,7 +2641,7 @@ class _MakeAutocompleteField extends StatelessWidget {
             prefixIcon: const Icon(Icons.business_outlined),
           ),
           validator: validator,
-          textInputAction: textInputAction,
+          textInputAction: TextInputAction.next,
           textCapitalization: TextCapitalization.words,
           onFieldSubmitted: (_) => onFieldSubmitted(),
         );
@@ -2780,7 +2781,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
               child: Column(
                 children: [
                   DropdownButtonFormField<ItemType>(
-                    value: _itemType,
+                    initialValue: _itemType,
                     decoration: const InputDecoration(labelText: 'Item type'),
                     items: ItemType.values.map((t) => DropdownMenuItem(value: t, child: Text(t.label))).toList(),
                     onChanged: (v) {
@@ -2875,7 +2876,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                       Expanded(
                         flex: 2,
                         child: DropdownButtonFormField<String>(
-                          value: _usageUnit,
+                          initialValue: _usageUnit,
                           decoration: const InputDecoration(labelText: 'Unit'),
                           items: const [
                             DropdownMenuItem(value: 'km', child: Text('km')),
@@ -3048,7 +3049,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
               child: Column(
                 children: [
                   DropdownButtonFormField<ItemType>(
-                    value: _itemType,
+                    initialValue: _itemType,
                     decoration: const InputDecoration(labelText: 'Item type'),
                     items: ItemType.values.map((t) => DropdownMenuItem(value: t, child: Text(t.label))).toList(),
                     onChanged: (v) {
@@ -3139,7 +3140,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                       Expanded(
                         flex: 2,
                         child: DropdownButtonFormField<String>(
-                          value: _usageUnit,
+                          initialValue: _usageUnit,
                           decoration: const InputDecoration(labelText: 'Unit'),
                           items: const [
                             DropdownMenuItem(value: 'km', child: Text('km')),
@@ -3271,6 +3272,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       ),
     );
     if (selected == null || selected.isEmpty) return;
+    if (!mounted) return;
 
     if (!isPro) {
       final remaining = kFreePartLimitPerVehicle - _v.parts.length;
@@ -3443,8 +3445,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   Future<void> _deleteSoldPartPhotos() async {
     final soldParts = _v.parts.where((p) => p.state == PartState.sold).toList();
     if (soldParts.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No sold parts with photos to clean up.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No sold parts with photos to clean up.')));
+      }
       return;
     }
 
@@ -3456,8 +3460,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     }
 
     if (photoCount == 0) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sold parts have no photos to delete.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sold parts have no photos to delete.')));
+      }
       return;
     }
 
@@ -3490,11 +3496,13 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       await PhotoStorage.deleteAllForOwner('part', part.id);
     }
 
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Deleted $photoCount photo${photoCount == 1 ? '' : 's'} from sold parts.'),
-        backgroundColor: Colors.green,
-      ));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deleted $photoCount photo${photoCount == 1 ? '' : 's'} from sold parts.'),
+          backgroundColor: Colors.green,
+        ));
+    }
   }
 
   Future<void> _endAllListingsForVehicle() async {
@@ -3930,7 +3938,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     widget.onPartEdited?.call(updated);
     // Pop with the updated part so any awaiting caller (e.g. VehicleDetailScreen)
     // can splice it back in without needing a callback.
-    if (context.mounted) Navigator.of(context).pop(updated);
+    if (mounted) Navigator.of(context).pop(updated);
   }
 
   @override
@@ -3940,7 +3948,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     final vehicle = widget.vehicle;
     final vehicleTitle = vehicle != null ? _titleOrFallback(vehicle) : '(vehicle missing)';
     final usageStr = (vehicle?.usageValue != null && vehicle!.usageValue! > 0)
-        ? '${_formatUsage(vehicle!.usageValue!)} ${vehicle!.usageUnit}'
+        ? '${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}'
         : null;
     final colorStr = (vehicle?.color ?? '').trim().isEmpty ? null : vehicle!.color;
 
@@ -4062,7 +4070,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
                   _DetailRow(
                     icon: Icons.badge_outlined,
                     label: 'Identifier',
-                    value: vehicle!.identifier!,
+                    value: vehicle.identifier!,
                   ),
               ],
             ),
@@ -4181,15 +4189,15 @@ class _PartGroup {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// SearchGroupDrillScreen  (v1.2)
+// _SearchGroupDrillScreen  (v1.2)
 // Lists individual _PartHits within one part-number group.
 // Tapping opens PartDetailScreen.
 // ═════════════════════════════════════════════════════════════════════════════
-class SearchGroupDrillScreen extends StatelessWidget {
+class _SearchGroupDrillScreen extends StatelessWidget {
   final _PartGroup group;
   final void Function(Part updated, Vehicle vehicle)? onPartEdited;
 
-  const SearchGroupDrillScreen({
+  const _SearchGroupDrillScreen({
     super.key,
     required this.group,
     this.onPartEdited,
@@ -4229,7 +4237,7 @@ class SearchGroupDrillScreen extends StatelessWidget {
                   vehicle: hit.vehicle,
                   onPartEdited: onPartEdited == null
                       ? null
-                      : (updated) => onPartEdited!(updated, hit.vehicle!),
+                      : (updated) => onPartEdited!(updated, hit.vehicle),
                 ),
               ),
             ),
@@ -4281,16 +4289,21 @@ class PartCard extends StatelessWidget {
 
     // ── Stat line: price · stock ID · location · age ─────────────────────────
     final statParts = <String>[];
-    if (part.askingPriceCents != null)
+    if (part.askingPriceCents != null) {
       statParts.add(formatMoneyFromCents(part.askingPriceCents!));
-    if (isSold && part.salePriceCents != null)
+    }
+    if (isSold && part.salePriceCents != null) {
       statParts.add('Sold ${formatMoneyFromCents(part.salePriceCents!)}');
-    if ((part.stockId ?? '').trim().isNotEmpty)
+    }
+    if ((part.stockId ?? '').trim().isNotEmpty) {
       statParts.add(part.stockId!);
-    if ((part.location ?? '').trim().isNotEmpty)
+    }
+    if ((part.location ?? '').trim().isNotEmpty) {
       statParts.add(part.location!);
-    if (part.qty > 1)
+    }
+    if (part.qty > 1) {
       statParts.add('Qty ${part.qty}');
+    }
     statParts.add('${days}d');
     final statLine = statParts.join('  ·  ');
 
@@ -5075,7 +5088,7 @@ class _AddListingDialogState extends State<AddListingDialog> {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<ListingPlatformPreset>(
-                value: _preset,
+                initialValue: _preset,
                 decoration: const InputDecoration(labelText: 'Platform'),
                 items: ListingPlatformPreset.values.map((p) => DropdownMenuItem(value: p, child: Text(p.label))).toList(),
                 onChanged: (v) => setState(() => _preset = v ?? ListingPlatformPreset.custom),
@@ -5185,7 +5198,7 @@ class _EditListingDialogState extends State<EditListingDialog> {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<ListingPlatformPreset>(
-                value: _l.preset,
+                initialValue: _l.preset,
                 decoration: const InputDecoration(labelText: 'Platform'),
                 items: ListingPlatformPreset.values.map((p) => DropdownMenuItem(value: p, child: Text(p.label))).toList(),
                 onChanged: (v) => setState(() => _l.preset = v ?? ListingPlatformPreset.custom),
@@ -5818,9 +5831,10 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        if (!_dirty) return true;
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
         final choice = await showDialog<String>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -5833,9 +5847,8 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
             ],
           ),
         );
-        if (choice == 'save') { await _save(); return false; }
-        if (choice == 'discard') return true;
-        return false;
+        if (choice == 'save') { await _save(); return; }
+        if (choice == 'discard' && context.mounted) Navigator.of(context).pop();
       },
       child: Scaffold(
         appBar: AppBar(
@@ -6054,7 +6067,7 @@ Future<void> showAddToCommonPartsSheet(
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: selectedGroup,
+                initialValue: selectedGroup,
                 decoration: const InputDecoration(labelText: 'Add to group'),
                 items: groups.isEmpty
                     ? [const DropdownMenuItem(value: 'General', child: Text('General'))]
@@ -6093,7 +6106,7 @@ Future<void> showAddToCommonPartsSheet(
                               items.add(partName);
                               groups[group] = items;
                               await PresetGroupStorage.save(itemType, groups);
-                              Navigator.pop(ctx);
+                              if (ctx.mounted) Navigator.pop(ctx);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(content: Text('Added "$partName" to $group')),
@@ -6403,7 +6416,7 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<PartState?>(
-                  value: _stateFilter,
+                  initialValue: _stateFilter,
                   decoration: const InputDecoration(labelText: 'Filter by state (optional)'),
                   items: [
                     const DropdownMenuItem(value: null, child: Text('All')),
@@ -6479,12 +6492,12 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
                             vehicle: hit.vehicle,
                             onPartEdited: widget.onPartEdited == null
                                 ? null
-                                : (updated) => widget.onPartEdited!(updated, hit.vehicle!),
+                                : (updated) => widget.onPartEdited!(updated, hit.vehicle),
                           ),
                         ));
                       } else {
                         Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => SearchGroupDrillScreen(
+                          builder: (_) => _SearchGroupDrillScreen(
                             group: g,
                             onPartEdited: widget.onPartEdited,
                           ),
@@ -6990,8 +7003,10 @@ class _SettingsTabState extends State<SettingsTab> {
         .toList();
 
     if (allSoldParts.isEmpty) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No sold parts found across any vehicle.')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No sold parts found across any vehicle.')));
+      }
       return;
     }
 
@@ -7003,8 +7018,10 @@ class _SettingsTabState extends State<SettingsTab> {
     }
 
     if (photoCount == 0) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sold parts have no photos to delete.')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sold parts have no photos to delete.')));
+      }
       return;
     }
 
@@ -7037,12 +7054,14 @@ class _SettingsTabState extends State<SettingsTab> {
       await PhotoStorage.deleteAllForOwner('part', part.id);
     }
 
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Deleted $photoCount photo${photoCount == 1 ? '' : 's'} from sold parts across all vehicles.'),
-        backgroundColor: Colors.green,
-      ));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Deleted $photoCount photo${photoCount == 1 ? '' : 's'} from sold parts across all vehicles.'),
+          backgroundColor: Colors.green,
+        ));
+    }
   }
 
   // ── Photo backup: zip all photo files and share ──────────────────
@@ -7322,7 +7341,7 @@ class _SettingsTabState extends State<SettingsTab> {
                       ),
                       Switch(
                         value: _debugProOverride,
-                        activeColor: Colors.orange,
+                        activeThumbColor: Colors.orange,
                         onChanged: (v) async {
                           await _saveDebugProFlag(v);
                           setState(() {}); // rebuild so isPro / UI updates
@@ -7444,9 +7463,9 @@ class _SettingsTabState extends State<SettingsTab> {
                 ),
 
                 const SizedBox(height: 6),
-                Row(children: [
-                  const Icon(Icons.info_outline, size: 13, color: Colors.white24),
-                  const SizedBox(width: 6),
+                const Row(children: [
+                  Icon(Icons.info_outline, size: 13, color: Colors.white24),
+                  SizedBox(width: 6),
                   Expanded(child: Text(
                     'Frees up storage by removing photos from sold parts across all vehicles. '
                     'You can also do this per vehicle from the vehicle detail screen.',
@@ -7536,11 +7555,11 @@ class _SettingsTabState extends State<SettingsTab> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                _InfoRow(label: 'App', value: 'WreckLog'),
+                const _InfoRow(label: 'App', value: 'WreckLog'),
                 const SizedBox(height: 6),
                 _InfoRow(label: 'Version', value: _version.isEmpty ? '…' : _version),
                 const SizedBox(height: 6),
-                _InfoRow(label: 'Build', value: 'Release 1'),
+                const _InfoRow(label: 'Build', value: 'Release 1'),
               ],
             ),
           ),

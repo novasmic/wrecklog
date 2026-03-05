@@ -90,8 +90,10 @@ class _PhotoStripState extends State<PhotoStrip> {
         try { await Gal.putImage(photo.pathOrData, album: 'WreckLog'); } catch (_) {}
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not add photo: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not add photo: $e')));
+      }
     }
   }
 
@@ -132,8 +134,10 @@ class _PhotoStripState extends State<PhotoStrip> {
         ));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not add photos: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not add photos: $e')));
+      }
     }
   }
 
@@ -363,8 +367,10 @@ class _FullscreenViewerState extends State<_FullscreenViewer> {
         await Share.shareXFiles([XFile(photo.pathOrData)], text: 'WreckLog photo');
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not share photo: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not share photo: $e')));
+      }
     }
   }
 

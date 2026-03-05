@@ -39,7 +39,7 @@ class AppPhoto {
       final createdAt  = j['createdAt']  as int?;
       final pathOrData = j['pathOrData'] as String?;
       if (id == null || ownerType == null || ownerId == null ||
-          createdAt == null || pathOrData == null) return null;
+          createdAt == null || pathOrData == null) { return null; }
       return AppPhoto(
         id:         id,
         ownerType:  ownerType,

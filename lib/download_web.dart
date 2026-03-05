@@ -1,11 +1,17 @@
-﻿import 'dart:html' as html;
+﻿import 'dart:js_interop';
+import 'dart:typed_data';
+import 'package:web/web.dart' as web;
 
 void downloadTextFile(String filename, String content) {
-  final bytes = content.codeUnits;
-  final blob = html.Blob([bytes], 'text/plain;charset=utf-8');
-  final url = html.Url.createObjectUrlFromBlob(blob);
-  final anchor = html.AnchorElement(href: url)
+  final bytes = Uint8List.fromList(content.codeUnits);
+  final blob = web.Blob(
+    [bytes.toJS].toJS,
+    web.BlobPropertyBag(type: 'text/plain;charset=utf-8'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.HTMLAnchorElement()
+    ..href = url
     ..setAttribute('download', filename)
     ..click();
-  html.Url.revokeObjectUrl(url);
+  web.URL.revokeObjectURL(url);
 }

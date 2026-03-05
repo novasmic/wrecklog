@@ -254,9 +254,9 @@ class _AppPreviewMockup extends StatelessWidget {
             Container(
               color: const Color(0xFF0A0A0A),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              child: Row(
+              child: const Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
+                children: [
                   Text('1:55',
                       style: TextStyle(
                           color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
@@ -268,9 +268,9 @@ class _AppPreviewMockup extends StatelessWidget {
             Container(
               color: const Color(0xFF0A0A0A),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              child: Row(
+              child: const Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
+                children: [
                   Text('WreckLog',
                       style: TextStyle(
                           color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
@@ -342,9 +342,9 @@ class _AppPreviewMockup extends StatelessWidget {
             Container(
               color: const Color(0xFF0A0A0A),
               padding: const EdgeInsets.symmetric(vertical: 5),
-              child: Row(
+              child: const Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: const [
+                children: [
                   _NavIco(Icons.inventory_2_outlined, 'Inventory', true),
                   _NavIco(Icons.search, 'Search', false),
                   _NavIco(Icons.directions_car_outlined, 'Vehicles', false),
