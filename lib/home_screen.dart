@@ -1,13 +1,10 @@
 // lib/home_screen.dart
-// WreckLog home screen — replaces tab navigation as the entry point.
-// Four big buttons navigate into the existing tab screens.
-
 import 'package:flutter/material.dart';
 
 /// The WreckLog wordmark — WRECK in white, LOG in orange, bold italic.
 class WreckLogLogo extends StatelessWidget {
   final double fontSize;
-  const WreckLogLogo({super.key, this.fontSize = 64});
+  const WreckLogLogo({super.key, this.fontSize = 52});
 
   @override
   Widget build(BuildContext context) {
@@ -34,13 +31,13 @@ class WreckLogLogo extends StatelessWidget {
   }
 }
 
-/// One of the four big home screen buttons.
-class _HomeButton extends StatelessWidget {
+/// One tile in the 2×2 grid.
+class _GridButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
 
-  const _HomeButton({
+  const _GridButton({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -48,35 +45,34 @@ class _HomeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
-      child: Material(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: const Color(0xFFE8700A), size: 28),
-                const SizedBox(width: 20),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.2,
-                  ),
+    return Material(
+      color: const Color(0xFF1A1A1A),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: const Color(0xFFE8700A), size: 32),
+              const SizedBox(height: 12),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -89,6 +85,7 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback onViewVehicles;
   final VoidCallback onSearchParts;
   final VoidCallback onStats;
+  final VoidCallback onSettings;
 
   const HomeScreen({
     super.key,
@@ -96,6 +93,7 @@ class HomeScreen extends StatelessWidget {
     required this.onViewVehicles,
     required this.onSearchParts,
     required this.onStats,
+    required this.onSettings,
   });
 
   @override
@@ -107,43 +105,85 @@ class HomeScreen extends StatelessWidget {
           children: [
             const Spacer(flex: 2),
 
-            // ── Logo ───────────────────────────────────────────────
+            // ── App icon ────────────────────────────────────────────
+            Image.asset('assets/icon/icon_fg.png', width: 80, height: 80),
+            const SizedBox(height: 14),
+
+            // ── Wordmark ────────────────────────────────────────────
             const WreckLogLogo(),
             const SizedBox(height: 8),
             Text(
               'Track Every Part. Track Real Profit.',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.55),
-                fontSize: 14,
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 13,
                 letterSpacing: 0.3,
               ),
             ),
 
             const Spacer(flex: 2),
 
-            // ── Buttons ────────────────────────────────────────────
-            _HomeButton(
-              icon: Icons.add,
-              label: 'Add Vehicle',
-              onTap: onAddVehicle,
-            ),
-            _HomeButton(
-              icon: Icons.directions_car,
-              label: 'View Vehicles',
-              onTap: onViewVehicles,
-            ),
-            _HomeButton(
-              icon: Icons.search,
-              label: 'Search Parts',
-              onTap: onSearchParts,
-            ),
-            _HomeButton(
-              icon: Icons.bar_chart,
-              label: 'Stats',
-              onTap: onStats,
+            // ── 2×2 Button grid ─────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _GridButton(
+                          icon: Icons.add_circle_outline,
+                          label: 'Add\nVehicle',
+                          onTap: onAddVehicle,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _GridButton(
+                          icon: Icons.directions_car_outlined,
+                          label: 'View\nVehicles',
+                          onTap: onViewVehicles,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _GridButton(
+                          icon: Icons.search,
+                          label: 'Search\nParts',
+                          onTap: onSearchParts,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _GridButton(
+                          icon: Icons.bar_chart_rounded,
+                          label: 'Stats',
+                          onTap: onStats,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
 
-            const Spacer(flex: 3),
+            const Spacer(flex: 2),
+
+            // ── Settings link ───────────────────────────────────────
+            TextButton.icon(
+              onPressed: onSettings,
+              icon: const Icon(Icons.settings_outlined, size: 15, color: Colors.white38),
+              label: const Text(
+                'Settings',
+                style: TextStyle(color: Colors.white38, fontSize: 13),
+              ),
+            ),
+
+            const SizedBox(height: 8),
           ],
         ),
       ),

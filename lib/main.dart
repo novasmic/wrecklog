@@ -283,12 +283,11 @@ class _AppShellState extends State<AppShell> {
     // Home screen sits outside the tab bar
     if (_tab == 0) {
       return HomeScreen(
-        onAddVehicle: () {
-          setState(() => _tab = 1);
-        },
+        onAddVehicle:   () => setState(() => _tab = 1),
         onViewVehicles: () => setState(() => _tab = 1),
         onSearchParts:  () => setState(() => _tab = 2),
         onStats:        () => setState(() => _tab = 3),
+        onSettings:     () => setState(() => _tab = 4),
       );
     }
 
