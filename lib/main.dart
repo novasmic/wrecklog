@@ -4198,7 +4198,6 @@ class _SearchGroupDrillScreen extends StatelessWidget {
   final void Function(Part updated, Vehicle vehicle)? onPartEdited;
 
   const _SearchGroupDrillScreen({
-    super.key,
     required this.group,
     this.onPartEdited,
   });
