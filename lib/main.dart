@@ -2056,11 +2056,11 @@ class _EmptyVehiclesState extends StatelessWidget {
         const SizedBox(height: 16),
 
         // How it works steps
-        AppCard(
+        const AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'HOW IT WORKS',
                 style: TextStyle(
                   color: Color(0xFFE8700A),
@@ -6179,11 +6179,11 @@ class _QuickAddPresetsDialogState extends State<QuickAddPresetsDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.swipe_down, size: 16, color: Colors.white38),
-                const SizedBox(width: 6),
-                const Text(
+                Icon(Icons.swipe_down, size: 16, color: Colors.white38),
+                SizedBox(width: 6),
+                Text(
                   'Tap or slide finger to select multiple',
                   style: TextStyle(color: Colors.white38, fontSize: 12),
                 ),
@@ -7324,15 +7324,15 @@ class _SettingsTabState extends State<SettingsTab> {
                     children: [
                       const Icon(Icons.bug_report_outlined, color: Colors.orange),
                       const SizedBox(width: 10),
-                      Expanded(
+                      const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Debug: Enable Pro',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
-                            const Text(
+                            Text(
                               'Bypasses Free limits. Debug builds only — not visible in release.',
                               style: TextStyle(color: Colors.white38, fontSize: 12),
                             ),
