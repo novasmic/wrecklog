@@ -28,16 +28,16 @@ class BillingService extends ChangeNotifier {
 
   // ── Restore tracking ───────────────────────────────────────────────────────
   // _restoreInProgress: true while restore() is in flight.
-  // _sawCallback:       stream fired at least once during this restore.
   // _foundActive:       at least one active/restored purchase was seen.
+  // _sawAnyCallback:    Play delivered at least one callback (even empty).
+  //                     Used to distinguish "no active subs" from "no network".
   //
-  // Revoke logic (evaluated after delay):
-  //   • Play returned items but none active  → sawCallback=true,  foundActive=false → revoke
-  //   • Play returned nothing (empty list)   → sawCallback=false, foundActive=false → revoke
-  //   • Play returned an active subscription → sawCallback=true,  foundActive=true  → keep
+  // Revoke logic (evaluated after timeout):
+  //   • Play responded with callbacks but no active sub → revoke
+  //   • Play never responded (network issue) → preserve existing status
   bool _restoreInProgress = false;
-  bool _sawCallback       = false;
   bool _foundActive       = false;
+  bool _sawAnyCallback    = false;
 
   // ── Price getters ──────────────────────────────────────────────────────────
   // Return Play Store localised price when available, fall back to AUD strings.
@@ -51,20 +51,32 @@ class BillingService extends ChangeNotifier {
     isPro = prefs.getBool(_kProKey) ?? false;
     notifyListeners();
 
-    isAvailable = await _iap.isAvailable();
+    try {
+      isAvailable = await _iap.isAvailable();
+    } catch (_) {
+      isAvailable = false;
+    }
     if (!isAvailable) return;
 
-    final response = await _iap.queryProductDetails(_allIds);
-    for (final p in response.productDetails) {
-      if (p.id == kMonthlyId) monthlyProduct = p;
-      if (p.id == kYearlyId)  yearlyProduct  = p;
+    // Query product details — wrapped so a network failure doesn't crash init.
+    try {
+      final response = await _iap.queryProductDetails(_allIds);
+      for (final p in response.productDetails) {
+        if (p.id == kMonthlyId) monthlyProduct = p;
+        if (p.id == kYearlyId)  yearlyProduct  = p;
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('IAP: failed to query products: $e');
+      // Degrade gracefully — prices fall back to hardcoded strings.
     }
 
     _sub?.cancel();
     _sub = _iap.purchaseStream.listen(_handlePurchases);
 
-    // Re-verify subscription status with Play on every launch.
-    await restore();
+    // Re-verify subscription status with Play — fire-and-forget so init()
+    // returns immediately. The app shows the cached isPro value at once;
+    // if Play revokes it, notifyListeners() updates the UI after the check.
+    restore(); // ignore: unawaited_futures
   }
 
   // ── Purchase ───────────────────────────────────────────────────────────────
@@ -89,20 +101,19 @@ class BillingService extends ChangeNotifier {
 
     // Reset flags before every restore attempt.
     _restoreInProgress = true;
-    _sawCallback       = false;
     _foundActive       = false;
+    _sawAnyCallback    = false;
 
     await _iap.restorePurchases();
 
     // restorePurchases() is fire-and-forget — results arrive via purchaseStream.
-    // Wait long enough for Play to deliver all callbacks before we decide.
-    await Future.delayed(const Duration(seconds: 4));
+    // Use an 8-second window (generous for slow networks) before evaluating.
+    await Future.delayed(const Duration(seconds: 8));
 
-    // Now evaluate: if no active entitlement was found, revoke cached Pro.
-    // This covers both:
-    //   a) Play returned purchase items but none were active (_sawCallback=true, _foundActive=false)
-    //   b) Play returned an empty list — no purchases at all (_sawCallback=false, _foundActive=false)
-    if (!_foundActive) {
+    // Only revoke if Play actually responded but returned no active entitlement.
+    // If _sawAnyCallback is false, Play never responded (network issue) —
+    // preserve the user's existing Pro status rather than incorrectly revoking.
+    if (_sawAnyCallback && !_foundActive) {
       await _revokePro();
     }
 
@@ -128,8 +139,9 @@ class BillingService extends ChangeNotifier {
 
   // ── Purchase stream handler ────────────────────────────────────────────────
   Future<void> _handlePurchases(List<PurchaseDetails> purchases) async {
-    // Mark that Play responded during this restore window.
-    if (_restoreInProgress) _sawCallback = true;
+    // An empty list means Play Store definitively returned "no purchases".
+    // Non-empty lists are evaluated per-purchase below.
+    if (_restoreInProgress && purchases.isEmpty) _sawAnyCallback = true;
 
     for (final p in purchases) {
       if (!_allIds.contains(p.productID)) continue;
@@ -137,13 +149,32 @@ class BillingService extends ChangeNotifier {
       switch (p.status) {
         case PurchaseStatus.purchased:
         case PurchaseStatus.restored:
-          if (_restoreInProgress) _foundActive = true;
-          await _grantPro();
+          // Minimal receipt check: ensure Play provided a verification token.
+          // Full server-side validation would call your backend here.
+          final hasReceipt =
+              p.verificationData.serverVerificationData.isNotEmpty;
+          if (hasReceipt || kDebugMode) {
+            // Purchased/restored = conclusive — Play responded.
+            if (_restoreInProgress) {
+              _sawAnyCallback = true;
+              _foundActive = true;
+            }
+            await _grantPro();
+          } else {
+            if (kDebugMode) {
+              debugPrint('IAP: skipped grant — empty receipt for ${p.productID}');
+            }
+          }
           break;
         case PurchaseStatus.error:
+          // Error is inconclusive — could be transient network failure.
+          // Do NOT set _sawAnyCallback; preserve existing Pro status.
           if (kDebugMode) debugPrint('IAP error: ${p.error}');
           break;
         case PurchaseStatus.canceled:
+          // Cancelled = Play responded, but subscription is not active.
+          if (_restoreInProgress) _sawAnyCallback = true;
+          break;
         case PurchaseStatus.pending:
           break;
       }

@@ -39,6 +39,17 @@ class PhotoStorage {
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
   }
 
+  // ── Wipe all photos from SharedPreferences (called by Storage.wipeAll) ────
+  static Future<void> wipeAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    final photoKeys = prefs.getKeys()
+        .where((k) => k.startsWith('wrecklog_photos_web_v1:') || k == _kIndexKey)
+        .toList();
+    for (final k in photoKeys) {
+      await prefs.remove(k);
+    }
+  }
+
   // ── Read all (used by backup) ─────────────────────────────────────────────
   static Future<List<AppPhoto>> loadAll() async {
     final prefs = await SharedPreferences.getInstance();

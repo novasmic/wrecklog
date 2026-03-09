@@ -4,8 +4,9 @@
 // FileImage handled via photo_file_image.dart conditional import.
 
 import 'dart:convert';
+import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:photo_view/photo_view.dart';
@@ -26,9 +27,18 @@ const int kMaxVehiclePhotos = kMaxPhotosPerOwner;
 const int kMaxPartPhotos    = kMaxPhotosPerOwner;
 
 // ── Image provider helper ─────────────────────────────────────────────────────
+// Storage strategies:
+// - iOS/Android: files stored in app-specific documents directory
+// - Web: photos stored as base64 strings in local storage
 ImageProvider _imageProviderFor(AppPhoto photo) {
   if (kIsWeb) {
-    return MemoryImage(base64Decode(photo.pathOrData));
+    try {
+      return MemoryImage(base64Decode(photo.pathOrData));
+    } on FormatException {
+      // Corrupted base64 — return a transparent placeholder so the widget
+      // falls through to its errorBuilder instead of crashing.
+      return MemoryImage(Uint8List(0));
+    }
   }
   return photoFileImage(photo.pathOrData);
 }
@@ -87,12 +97,16 @@ class _PhotoStripState extends State<PhotoStrip> {
       // Auto-save to device gallery (mobile only) — silent fail so a
       // permissions denial doesn't block the user from using the photo.
       if (!kIsWeb) {
-        try { await Gal.putImage(photo.pathOrData, album: 'WreckLog'); } catch (_) {}
+        try {
+          await Gal.putImage(photo.pathOrData, album: 'WreckLog');
+        } catch (e) {
+          if (kDebugMode) debugPrint('Gallery save failed: $e');
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add photo: $e')));
+          const SnackBar(content: Text('Could not add photo. Check camera permissions and try again.')));
       }
     }
   }
@@ -111,16 +125,14 @@ class _PhotoStripState extends State<PhotoStrip> {
       final added = <AppPhoto>[];
 
       for (final xfile in toImport) {
+        if (!mounted) return; // exit early if user navigated away
         final photo = await PhotoStorage.addFromXFile(
           ownerType: widget.ownerType,
           ownerId:   widget.ownerId,
           xfile:     xfile,
         );
         added.add(photo);
-        // Auto-save each to gallery
-        if (!kIsWeb) {
-          try { await Gal.putImage(photo.pathOrData, album: 'WreckLog'); } catch (_) {}
-        }
+        // Do NOT save gallery-picked photos back to gallery — they're already there.
       }
 
       if (mounted) setState(() => _photos.addAll(added));
@@ -136,7 +148,7 @@ class _PhotoStripState extends State<PhotoStrip> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add photos: $e')));
+          const SnackBar(content: Text('Could not add photos. Check gallery permissions and try again.')));
       }
     }
   }
@@ -211,7 +223,7 @@ class _PhotoStripState extends State<PhotoStrip> {
             SizedBox(width: 4),
             Expanded(
               child: Text(
-                'Saved in-app. Also saves to your gallery if permission is granted.',
+                'Saved in-app. Camera photos are also saved to your gallery.',
                 style: TextStyle(fontSize: 11, color: Colors.white24),
               ),
             ),
@@ -346,7 +358,11 @@ class _FullscreenViewerState extends State<_FullscreenViewer> {
   Future<void> _delete() async {
     final photo = _photos[_current];
     await widget.onDelete(photo);
-    if (_photos.length == 1) { if (mounted) Navigator.of(context).pop(); return; }
+    if (!mounted) return;
+    if (_photos.length == 1) {
+      Navigator.of(context).pop();
+      return; // widget is now popped — do not touch state or controllers
+    }
     setState(() {
       _photos.removeAt(_current);
       if (_current >= _photos.length) _current = _photos.length - 1;
@@ -355,6 +371,7 @@ class _FullscreenViewerState extends State<_FullscreenViewer> {
   }
 
   Future<void> _share() async {
+    if (_current >= _photos.length) return; // safety bounds check
     final photo = _photos[_current];
     try {
       if (kIsWeb) {
@@ -366,10 +383,15 @@ class _FullscreenViewerState extends State<_FullscreenViewer> {
         // Mobile — share the file directly
         await Share.shareXFiles([XFile(photo.pathOrData)], text: 'WreckLog photo');
       }
+    } on FormatException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo data is corrupted and cannot be shared.')));
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not share photo: $e')));
+          const SnackBar(content: Text('Could not share photo. Try again.')));
       }
     }
   }

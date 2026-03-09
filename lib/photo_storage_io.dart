@@ -7,6 +7,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -95,6 +97,13 @@ class PhotoStorage {
   // ── Public loadAll (used by backup) ──────────────────────────────────────
   static Future<List<AppPhoto>> loadAll() => _loadAll();
 
+  // ── Wipe all photo files and metadata (called by Storage.wipeAll) ─────────
+  static Future<void> wipeAll() async {
+    final base = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(base.path, 'wrecklog', 'photos'));
+    if (dir.existsSync()) await dir.delete(recursive: true);
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
 
   /// Path: .../wrecklog/photos/metadata.json
@@ -126,8 +135,9 @@ class PhotoStorage {
           .map((e) => AppPhoto.tryFromJson(e as Map<String, dynamic>))
           .whereType<AppPhoto>()
           .toList();
-    } catch (_) {
-      // Corrupted file — return empty rather than crash
+    } catch (e) {
+      // Corrupted metadata file — return empty rather than crash.
+      if (kDebugMode) debugPrint('PhotoStorage: failed to read metadata: $e');
       return [];
     }
   }
@@ -145,8 +155,9 @@ class PhotoStorage {
     try {
       if (file.existsSync()) await file.delete();
       await tmp.rename(file.path);
-    } catch (_) {
+    } catch (e) {
       // Fallback: copy bytes then clean up tmp
+      if (kDebugMode) debugPrint('PhotoStorage: atomic rename failed, using copy fallback: $e');
       try {
         await tmp.copy(file.path);
       } finally {
@@ -175,8 +186,9 @@ class PhotoStorage {
         // Use _saveAll so migration also benefits from atomic write.
         await _saveAll(photos);
       }
-    } catch (_) {
-      // Migration failed — leave prefs key in place, will retry next launch
+    } catch (e) {
+      // Migration failed — leave prefs key in place, will retry next launch.
+      if (kDebugMode) debugPrint('PhotoStorage: migration from prefs failed: $e');
       return;
     }
 
@@ -188,7 +200,9 @@ class PhotoStorage {
     try {
       final f = File(path);
       if (f.existsSync()) f.deleteSync();
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) debugPrint('PhotoStorage: failed to delete file $path: $e');
+    }
   }
 
   static Future<Directory> _photoDir(String ownerType, String ownerId) async {

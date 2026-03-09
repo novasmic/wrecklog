@@ -35,4 +35,6 @@ class PhotoStorage {
   static Future<void> deleteAllForOwner(
           String ownerType, String ownerId) async =>
       throw UnsupportedError('Photo storage not supported on this platform.');
+
+  static Future<void> wipeAll() async {}
 }
