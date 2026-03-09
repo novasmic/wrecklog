@@ -8488,10 +8488,29 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         return;
       }
 
-      await Share.shareXFiles(
-        [XFile(zipPath, mimeType: 'application/zip')],
-        subject: 'WreckLog Photo Backup $stamp',
-      );
+      // Desktop: save-file dialog; mobile: share sheet.
+      if (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux) {
+        final savePath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save WreckLog Photo Backup',
+          fileName: 'wrecklog_photos_$stamp.zip',
+          type: FileType.custom,
+          allowedExtensions: ['zip'],
+        );
+        if (savePath == null) return; // user cancelled
+        await File(zipPath).copy(savePath);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Photo backup saved to $savePath'), backgroundColor: Colors.green),
+          );
+        }
+      } else {
+        await Share.shareXFiles(
+          [XFile(zipPath, mimeType: 'application/zip')],
+          subject: 'WreckLog Photo Backup $stamp',
+        );
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
