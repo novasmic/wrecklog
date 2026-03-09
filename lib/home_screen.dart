@@ -53,7 +53,7 @@ class _GlowPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// One tile in the 2×2 grid.
+/// One full-width button in the vertical stack.
 class _GridButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -69,20 +69,17 @@ class _GridButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Ink(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: LinearGradient(
+            borderRadius: BorderRadius.circular(16),
+            gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFF252525),
-                const Color(0xFF1A1A1A),
-              ],
+              colors: [Color(0xFF252525), Color(0xFF1A1A1A)],
             ),
             border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
             boxShadow: [
@@ -93,49 +90,51 @@ class _GridButton extends StatelessWidget {
               ),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
-              // Orange accent bar at top
+              // Orange accent bar on left
               Container(
-                height: 3,
+                width: 4,
+                height: 64,
                 decoration: const BoxDecoration(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                  borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
                   gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
                     colors: [Color(0xFFE8700A), Color(0xFFC45A06)],
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Icon with subtle glow
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFE8700A).withValues(alpha: 0.12),
-                      ),
-                      child: Icon(icon, color: const Color(0xFFE8700A), size: 28),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        height: 1.3,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
+              const SizedBox(width: 16),
+              // Icon in circle
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFE8700A).withValues(alpha: 0.12),
+                ),
+                child: Icon(icon, color: const Color(0xFFE8700A), size: 24),
+              ),
+              const SizedBox(width: 16),
+              // Label
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
                 ),
               ),
+              const Spacer(),
+              // Chevron
+              Icon(
+                Icons.chevron_right,
+                color: Colors.white.withValues(alpha: 0.25),
+                size: 20,
+              ),
+              const SizedBox(width: 16),
             ],
           ),
         ),
@@ -146,18 +145,10 @@ class _GridButton extends StatelessWidget {
 
 class HomeScreen extends StatelessWidget {
   final VoidCallback onAddVehicle;
-  final VoidCallback onViewVehicles;
-  final VoidCallback onSearchParts;
-  final VoidCallback onStats;
-  final VoidCallback onSettings;
 
   const HomeScreen({
     super.key,
     required this.onAddVehicle,
-    required this.onViewVehicles,
-    required this.onSearchParts,
-    required this.onStats,
-    required this.onSettings,
   });
 
   @override
@@ -187,6 +178,12 @@ class HomeScreen extends StatelessWidget {
           CustomPaint(
             size: Size.infinite,
             painter: _DiagonalTexturePainter(),
+          ),
+
+          // ── Leather grain texture ─────────────────────────────────
+          CustomPaint(
+            size: Size.infinite,
+            painter: LeatherGrainPainter(),
           ),
 
           // ── Main content ─────────────────────────────────────────
@@ -284,67 +281,17 @@ class HomeScreen extends StatelessWidget {
 
                 const Spacer(flex: 2),
 
-                // ── 2×2 Button grid ────────────────────────────────
+                // ── Add Vehicle button ───────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _GridButton(
-                              icon: Icons.add_circle_outline,
-                              label: 'Add\nVehicle',
-                              onTap: onAddVehicle,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: _GridButton(
-                              icon: Icons.directions_car_outlined,
-                              label: 'View\nVehicles',
-                              onTap: onViewVehicles,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _GridButton(
-                              icon: Icons.search,
-                              label: 'Search\nParts',
-                              onTap: onSearchParts,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: _GridButton(
-                              icon: Icons.bar_chart_rounded,
-                              label: 'Stats',
-                              onTap: onStats,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  child: _GridButton(
+                    icon: Icons.add_circle_outline,
+                    label: 'Add Vehicle',
+                    onTap: onAddVehicle,
                   ),
                 ),
 
                 const Spacer(flex: 2),
-
-                // ── Settings link ──────────────────────────────────
-                TextButton.icon(
-                  onPressed: onSettings,
-                  icon: const Icon(Icons.settings_outlined, size: 15, color: Colors.white30),
-                  label: const Text(
-                    'Settings',
-                    style: TextStyle(color: Colors.white30, fontSize: 13),
-                  ),
-                ),
-
-                const SizedBox(height: 8),
               ],
             ),
           ),
@@ -371,6 +318,70 @@ class _DiagonalTexturePainter extends CustomPainter {
         Offset(x - size.height * math.tan(math.pi / 6), size.height),
         paint,
       );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Leather grain — pebbled dots + short curved grain strokes.
+class LeatherGrainPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rng = math.Random(7);
+
+    // ── Pebble layer: tiny irregular dots ──────────────────────────────────
+    final dotPaint = Paint()..style = PaintingStyle.fill;
+    for (int i = 0; i < 2800; i++) {
+      final x  = rng.nextDouble() * size.width;
+      final y  = rng.nextDouble() * size.height;
+      final r  = rng.nextDouble() * 1.4 + 0.3;
+      // Alternate very slightly lighter / darker for embossed feel
+      final a  = rng.nextBool()
+          ? 0.055 + rng.nextDouble() * 0.03
+          : 0.0;
+      if (a == 0.0) continue;
+      dotPaint.color = Colors.white.withValues(alpha: a);
+      canvas.drawCircle(Offset(x, y), r, dotPaint);
+    }
+
+    // ── Shadow side of each pebble: tiny dark offset dot ───────────────────
+    final shadowPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.black.withValues(alpha: 0.06);
+    final rng2 = math.Random(7); // same seed → same positions
+    for (int i = 0; i < 2800; i++) {
+      final x = rng2.nextDouble() * size.width;
+      final y = rng2.nextDouble() * size.height;
+      final r = rng2.nextDouble() * 1.4 + 0.3;
+      rng2.nextBool(); rng2.nextDouble(); // consume same calls as above
+      canvas.drawCircle(Offset(x + 0.8, y + 0.8), r * 0.7, shadowPaint);
+    }
+
+    // ── Grain strokes: short, slightly curved lines in a loose direction ───
+    final grainPaint = Paint()
+      ..style  = PaintingStyle.stroke
+      ..strokeWidth = 0.7
+      ..strokeCap = StrokeCap.round;
+    final rng3 = math.Random(13);
+    for (int i = 0; i < 520; i++) {
+      final x   = rng3.nextDouble() * size.width;
+      final y   = rng3.nextDouble() * size.height;
+      final len = rng3.nextDouble() * 22 + 5;
+      // Grain runs mostly horizontal with ±30° variation
+      final angle = (rng3.nextDouble() - 0.5) * math.pi / 3;
+      final dx  = math.cos(angle) * len / 2;
+      final dy  = math.sin(angle) * len / 2;
+      // Slight bow in the middle
+      final bx  = x + (rng3.nextDouble() - 0.5) * 5;
+      final by  = y + (rng3.nextDouble() - 0.5) * 5;
+      final alpha = 0.025 + rng3.nextDouble() * 0.025;
+      grainPaint.color = Colors.white.withValues(alpha: alpha);
+      final path = Path()
+        ..moveTo(x - dx, y - dy)
+        ..quadraticBezierTo(bx, by, x + dx, y + dy);
+      canvas.drawPath(path, grainPaint);
     }
   }
 

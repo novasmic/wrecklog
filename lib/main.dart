@@ -1,4 +1,5 @@
 // lib/main.dart
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'io_file_stub.dart' if (dart.library.io) 'io_file_io.dart';
@@ -25,6 +26,35 @@ import 'package:archive/archive_io.dart';
 
 const double kPad = 12;
 const double kRadius = 16;
+
+const List<String> kPartCategories = [
+  'Engine',
+  'Transmission',
+  'Body & Panels',
+  'Interior',
+  'Electrical',
+  'Suspension & Brakes',
+  'Cooling',
+  'Exhaust',
+  'Fuel System',
+  'Glass',
+  'Wheels & Tyres',
+  'Other',
+];
+
+class PartCategoryStorage {
+  static const _key = 'part_categories';
+
+  static Future<List<String>> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_key) ?? List.from(kPartCategories);
+  }
+
+  static Future<void> save(List<String> categories) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_key, categories);
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -181,11 +211,18 @@ class _AppShellState extends State<AppShell> {
   int _tab = 0; // 0=home, 1=vehicles, 2=search, 3=stats, 4=settings;
   bool _loading = true;
   List<Vehicle> _vehicles = [];
+  Timer? _saveDebounce;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _saveDebounce?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -204,7 +241,27 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
-  Future<void> _persist() async => Storage.saveVehicles(_vehicles);
+  // Debounced save — batches rapid successive changes (e.g. adding many parts)
+  // into a single disk write 500 ms after the last call.
+  Future<void> _persist() async {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 500), () {
+      Storage.saveVehicles(_vehicles).catchError((Object e) {
+        if (kDebugMode) debugPrint('Storage.saveVehicles failed: $e');
+        // Show a snackbar on the next frame if context is still valid.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Save failed — check device storage.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        });
+      });
+    });
+  }
 
   Future<void> _updateVehicle(Vehicle updated) async {
     setState(() {
@@ -220,8 +277,9 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _deleteVehicle(String id) async {
     // Clean up all photos for this vehicle and every part under it
-    final vehicle = _vehicles.firstWhere((x) => x.id == id,
-        orElse: () => _vehicles.first);
+    final vehicleIdx = _vehicles.indexWhere((x) => x.id == id);
+    if (vehicleIdx < 0) return; // vehicle not found — nothing to delete
+    final vehicle = _vehicles[vehicleIdx];
     await PhotoStorage.deleteAllForOwner('vehicle', id);
     for (final part in vehicle.parts) {
       await PhotoStorage.deleteAllForOwner('part', part.id);
@@ -238,65 +296,67 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      VehiclesHome(
-        loading: _loading,
-        vehicles: _vehicles,
-        onReload: _load,
-        onAddVehicle: _addVehicle,
-        onUpdateVehicle: _updateVehicle,
-        onDeleteVehicle: _deleteVehicle,
-      ),
-      PartsSearchTab(
-        vehicles: _vehicles,
-        onOpenVehicle: (vehicleId) async {
-          final v = _vehicles.firstWhere((x) => x.id == vehicleId);
-          final updated = await Navigator.of(context).push<Vehicle>(
-            MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: v, allVehicles: _vehicles)),
-          );
-          if (updated != null) await _updateVehicle(updated);
-        },
-        onPartEdited: (updatedPart, owningVehicle) async {
-          // Splice the updated part back into its vehicle then persist.
-          final vIdx = _vehicles.indexWhere((x) => x.id == owningVehicle.id);
-          if (vIdx < 0) return;
-          final v = _vehicles[vIdx];
-          final pIdx = v.parts.indexWhere((p) => p.id == updatedPart.id);
-          if (pIdx < 0) return;
-          setState(() => v.parts[pIdx] = updatedPart);
-          await _persist();
-        },
-      ),
-      StatsTab(
-        loading: _loading,
-        vehicles: _vehicles,
-      ),
-      SettingsTab(
-        vehicles: _vehicles,
-        onRestoreVehicles: (restored) async {
-          setState(() => _vehicles = restored);
-          await _persist();
-        },
-      ),
-    ];
-
-    // Home screen sits outside the tab bar
-    if (_tab == 0) {
-      return HomeScreen(
-        onAddVehicle:   () => setState(() => _tab = 1),
-        onViewVehicles: () => setState(() => _tab = 1),
-        onSearchParts:  () => setState(() => _tab = 2),
-        onStats:        () => setState(() => _tab = 3),
-        onSettings:     () => setState(() => _tab = 4),
-      );
-    }
-
+    // IndexedStack keeps all tab widgets alive — state (search query, scroll
+    // position, etc.) is preserved when switching between tabs.
     return Scaffold(
-      body: pages[_tab - 1],
+      body: IndexedStack(
+        index: _tab,
+        children: [
+          HomeScreen(
+            onAddVehicle: () => setState(() => _tab = 1),
+          ),
+          VehiclesHome(
+            loading: _loading,
+            vehicles: _vehicles,
+            onReload: _load,
+            onAddVehicle: _addVehicle,
+            onUpdateVehicle: _updateVehicle,
+            onDeleteVehicle: _deleteVehicle,
+          ),
+          PartsSearchTab(
+            vehicles: _vehicles,
+            onOpenVehicle: (vehicleId) async {
+              final vIdx = _vehicles.indexWhere((x) => x.id == vehicleId);
+              if (vIdx < 0) return;
+              final v = _vehicles[vIdx];
+              final updated = await Navigator.of(context).push<Vehicle>(
+                MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: v, allVehicles: _vehicles)),
+              );
+              if (updated != null) await _updateVehicle(updated);
+            },
+            onPartEdited: (updatedPart, owningVehicle) async {
+              // Splice the updated part back into its vehicle then persist.
+              final vIdx = _vehicles.indexWhere((x) => x.id == owningVehicle.id);
+              if (vIdx < 0) return;
+              final v = _vehicles[vIdx];
+              final pIdx = v.parts.indexWhere((p) => p.id == updatedPart.id);
+              if (pIdx < 0) return;
+              setState(() => v.parts[pIdx] = updatedPart);
+              await _persist();
+            },
+          ),
+          StatsTab(
+            loading: _loading,
+            vehicles: _vehicles,
+          ),
+          SettingsTab(
+            vehicles: _vehicles,
+            onRestoreVehicles: (restored) async {
+              setState(() => _vehicles = restored);
+              await _persist();
+            },
+            onWipeAll: () async {
+              await Storage.wipeAll();
+              await _load();
+            },
+          ),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab - 1,
-        onDestinationSelected: (i) => setState(() => _tab = i + 1),
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
+          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.directions_car), label: 'Vehicles'),
           NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
           NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Stats'),
@@ -386,62 +446,37 @@ extension PartStateX on PartState {
   }
 }
 
-enum ListingPlatformPreset { ebay, facebook, gumtree, custom }
+const List<String> kDefaultPlatforms = ['eBay', 'Facebook', 'Marketplace', 'Gumtree', 'Craigslist'];
 
-extension ListingPlatformPresetX on ListingPlatformPreset {
-  String get label {
-    switch (this) {
-      case ListingPlatformPreset.ebay:
-        return 'eBay';
-      case ListingPlatformPreset.facebook:
-        return 'Facebook';
-      case ListingPlatformPreset.gumtree:
-        return 'Gumtree';
-      case ListingPlatformPreset.custom:
-        return 'Custom';
-    }
+class PlatformStorage {
+  static const _key = 'listing_platforms';
+
+  static Future<List<String>> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_key) ?? List.from(kDefaultPlatforms);
   }
 
-  static ListingPlatformPreset fromString(String s) {
-    for (final v in ListingPlatformPreset.values) {
-      if (v.name == s) return v;
-    }
-    return ListingPlatformPreset.custom;
+  static Future<void> save(List<String> platforms) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_key, platforms);
   }
 }
 
-class PlatformDetection {
-  final ListingPlatformPreset preset;
-  final String? suggestedCustomName;
-  PlatformDetection(this.preset, this.suggestedCustomName);
-}
-
-PlatformDetection detectPlatformFromUrl(String url) {
+/// Returns the best-match platform name from the URL, or empty string if unknown.
+String detectPlatformFromUrl(String url) {
   final u = url.toLowerCase().trim();
-  if (u.contains('ebay.')) return PlatformDetection(ListingPlatformPreset.ebay, null);
-  if (u.contains('facebook.com') || u.contains('fb.com')) return PlatformDetection(ListingPlatformPreset.facebook, null);
-  if (u.contains('gumtree.')) return PlatformDetection(ListingPlatformPreset.gumtree, null);
-
-  final domain = _tryExtractDomain(u);
-  if (domain != null && domain.isNotEmpty) return PlatformDetection(ListingPlatformPreset.custom, domain);
-  return PlatformDetection(ListingPlatformPreset.custom, null);
+  if (u.contains('ebay.'))                           return 'eBay';
+  if (u.contains('facebook.com') || u.contains('fb.com')) return 'Facebook';
+  if (u.contains('marketplace'))                     return 'Marketplace';
+  if (u.contains('gumtree.'))                        return 'Gumtree';
+  if (u.contains('craigslist.'))                     return 'Craigslist';
+  return '';
 }
 
-String? _tryExtractDomain(String urlLower) {
-  try {
-    final uri = Uri.tryParse(urlLower);
-    if (uri == null) return null;
-    if (uri.host.isNotEmpty) return uri.host;
-    return null;
-  } catch (_) {
-    return null;
-  }
-}
 
 class Listing {
   final String id;
-  ListingPlatformPreset preset;
-  String? customPlatformName;
+  String platform;
   String url;
   bool isLive;
   int? listedPriceCents;
@@ -449,24 +484,18 @@ class Listing {
 
   Listing({
     required this.id,
-    required this.preset,
+    required this.platform,
     required this.url,
     required this.isLive,
     required this.createdAt,
-    this.customPlatformName,
     this.listedPriceCents,
   });
 
-  String get displayPlatformName {
-    if (preset != ListingPlatformPreset.custom) return preset.label;
-    final c = (customPlatformName ?? '').trim();
-    return c.isEmpty ? 'Custom' : c;
-  }
+  String get displayPlatformName => platform;
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'preset': preset.name,
-        'customPlatformName': customPlatformName,
+        'platform': platform,
         'url': url,
         'isLive': isLive,
         'listedPriceCents': listedPriceCents,
@@ -474,36 +503,26 @@ class Listing {
       };
 
   static Listing fromJson(Map<String, dynamic> j) {
-    final legacyPlatform = (j['platform'] as String?);
-    final presetStr = (j['preset'] as String?);
-
-    ListingPlatformPreset preset;
-    String? customName = j['customPlatformName'] as String?;
-
-    if (presetStr != null) {
-      preset = ListingPlatformPresetX.fromString(presetStr);
-    } else if (legacyPlatform != null) {
-      if (legacyPlatform == 'ebay') {
-        preset = ListingPlatformPreset.ebay;
-      } else if (legacyPlatform == 'facebook') {
-        preset = ListingPlatformPreset.facebook;
-      } else if (legacyPlatform == 'gumtree') {
-        preset = ListingPlatformPreset.gumtree;
-      } else {
-        preset = ListingPlatformPreset.custom;
-        customName ??= 'Other';
+    // New format: 'platform' string field
+    String platform = (j['platform'] as String?) ?? '';
+    if (platform.isEmpty) {
+      // Migrate from old preset-based format
+      final presetStr = (j['preset'] as String?) ?? 'custom';
+      final customName = (j['customPlatformName'] as String?);
+      switch (presetStr) {
+        case 'ebay':     platform = 'eBay'; break;
+        case 'facebook': platform = 'Facebook'; break;
+        case 'gumtree':  platform = 'Gumtree'; break;
+        default:
+          platform = (customName?.trim().isNotEmpty == true) ? customName!.trim() : 'Other';
       }
-    } else {
-      preset = ListingPlatformPreset.custom;
     }
-
     return Listing(
       id: j['id'] as String,
-      preset: preset,
-      customPlatformName: customName,
+      platform: platform,
       url: (j['url'] as String?) ?? '',
       isLive: (j['isLive'] as bool?) ?? (j['isActive'] as bool?) ?? true,
-      listedPriceCents: j['listedPriceCents'] as int?,
+      listedPriceCents: (j['listedPriceCents'] as num?)?.toInt(),
       createdAt: DateTime.tryParse((j['createdAt'] as String?) ?? '') ?? DateTime.now(),
     );
   }
@@ -536,6 +555,9 @@ class Part {
   /// Reserved for future photo support. Empty list for existing parts.
   List<String> photoIds;
 
+  /// User-assigned category. Null for uncategorised / legacy parts.
+  String? category;
+
   Part({
     required this.id,
     required this.name,
@@ -549,21 +571,22 @@ class Part {
     this.salePriceCents,
     this.stockId,
     this.updatedAt,
+    this.category,
     List<String>? photoIds,
     List<Listing>? listings,
   }) : photoIds = photoIds ?? [],
        listings = listings ?? [];
 
-  bool get hasLiveListings => listings.any((l) => l.isLive && l.url.trim().isNotEmpty);
+  bool get hasLiveListings => listings.any((l) => l.url.trim().isNotEmpty && l.isLive);
 
   Set<String> get livePlatformNames => listings
-      .where((l) => l.isLive && l.url.trim().isNotEmpty)
+      .where((l) => l.url.trim().isNotEmpty)
       .map((l) => l.displayPlatformName)
       .toSet();
 
   int get totalLinksCount => listings.where((l) => l.url.trim().isNotEmpty).length;
 
-  int get liveLinksCount => listings.where((l) => l.isLive && l.url.trim().isNotEmpty).length;
+  int get liveLinksCount => listings.where((l) => l.url.trim().isNotEmpty && l.isLive).length;
 
   int daysInStock({DateTime? now}) {
     final n = now ?? DateTime.now();
@@ -587,6 +610,7 @@ class Part {
         'updatedAt': updatedAt?.toIso8601String(),
         'stockId': stockId,
         'photoIds': photoIds,
+        'category': category,
       };
 
   static Part fromJson(Map<String, dynamic> j) {
@@ -598,14 +622,15 @@ class Part {
       location: (j['location'] as String?),
       notes: (j['notes'] as String?),
       partNumber: (j['partNumber'] as String?),
-      qty: ((j['qty'] as int?) ?? 1).clamp(1, 999999),
-      askingPriceCents: j['askingPriceCents'] as int?,
-      salePriceCents: j['salePriceCents'] as int?,
+      qty: (((j['qty'] as num?)?.toInt()) ?? 1).clamp(1, 999999),
+      askingPriceCents: (j['askingPriceCents'] as num?)?.toInt(),
+      salePriceCents: (j['salePriceCents'] as num?)?.toInt(),
       createdAt: DateTime.tryParse((j['createdAt'] as String?) ?? '') ?? DateTime.now(),
       listings: listingsJson.map((e) => Listing.fromJson(e as Map<String, dynamic>)).toList(),
       stockId: j['stockId'] as String?,  // null for old parts — never back-filled
       updatedAt: j['updatedAt'] == null ? null : DateTime.tryParse(j['updatedAt'] as String),
       photoIds: (j['photoIds'] as List<dynamic>?)?.map((e) => e as String).toList(),
+      category: j['category'] as String?,
     );
   }
 }
@@ -661,7 +686,10 @@ class Vehicle {
 
   int get inStockCount => parts.where((p) => p.state == PartState.removed || p.state == PartState.listed).length;
 
-  int get listedLiveCount => parts.where((p) => p.hasLiveListings).length;
+  int get listedLiveCount => parts.where((p) =>
+      p.hasLiveListings &&
+      p.state != PartState.sold &&
+      p.state != PartState.scrapped).length;
 
   int get soldRevenueCents {
     int sum = 0;
@@ -702,14 +730,14 @@ class Vehicle {
       id: j['id'] as String,
       make: (j['make'] as String?) ?? '',
       model: (j['model'] as String?) ?? '',
-      year: (j['year'] as int?) ?? DateTime.now().year,
+      year: (j['year'] as num?)?.toInt() ?? DateTime.now().year,
       itemType: ItemTypeX.fromString((j['itemType'] as String?) ?? 'other'),
       identifier: (j['identifier'] as String?) ?? (j['vin'] as String?),
       status: VehicleStatusX.fromString((j['status'] as String?) ?? 'whole'),
-      purchasePriceCents: j['purchasePriceCents'] as int?,
+      purchasePriceCents: (j['purchasePriceCents'] as num?)?.toInt(),
       acquiredAt: DateTime.tryParse((j['acquiredAt'] as String?) ?? '') ?? DateTime.now(),
       parts: partsJson.map((e) => Part.fromJson(e as Map<String, dynamic>)).toList(),
-      usageValue: j['usageValue'] as int?,
+      usageValue: (j['usageValue'] as num?)?.toInt(),
       usageUnit: (j['usageUnit'] as String?) ?? 'km',
       color: (j['color'] as String?) ?? '',
       notes: j['notes'] as String?,
@@ -764,7 +792,8 @@ class Storage {
       final decoded = jsonDecode(raw);
       if (decoded is! List) return [];
       return decoded.map((e) => Vehicle.fromJson(e as Map<String, dynamic>)).toList();
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) debugPrint('Storage: failed to decode vehicles JSON: $e');
       return [];
     }
   }
@@ -777,10 +806,31 @@ class Storage {
 
   static Future<void> wipeAll() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Vehicle data
     await prefs.remove(_vehiclesKey);
     for (final k in _legacyKeys) {
       await prefs.remove(k);
     }
+
+    // User-customised settings
+    await prefs.remove('part_categories');
+    await prefs.remove('listing_platforms');
+    await prefs.remove(PresetGroupStorage._versionKey);
+    for (final type in ItemType.values) {
+      await PresetGroupStorage.reset(type);
+    }
+
+    // Recent model autocomplete cache
+    final recentKeys = prefs.getKeys()
+        .where((k) => k.startsWith('recent_models_'))
+        .toList();
+    for (final k in recentKeys) {
+      await prefs.remove(k);
+    }
+
+    // Photos (platform-specific implementation)
+    await PhotoStorage.wipeAll();
   }
 }
 
@@ -801,14 +851,19 @@ int? parseMoneyToCents(String input) {
   if (s.isEmpty) return null;
   final cleaned = s.replaceAll('\$', '').replaceAll(',', '').trim();
   final value = double.tryParse(cleaned);
-  if (value == null) return null;
+  if (value == null || value.isNaN || value.isInfinite) return null;
+  if (value < 0) return null;
+  if (value > 99999999) return null; // cap at ~$1,000,000
   return (value * 100).round();
 }
 
 String formatDateShort(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-String newId() => DateTime.now().microsecondsSinceEpoch.toString();
+// Counter suffix ensures uniqueness even when called in a tight loop on
+// platforms where microsecond clock resolution is coarser than 1 µs.
+int _newIdCounter = 0;
+String newId() => '${DateTime.now().microsecondsSinceEpoch}_${_newIdCounter++}';
 
 String normalizeIdentifier(String input) => input.trim().toUpperCase();
 
@@ -1156,6 +1211,10 @@ Uri? _safeParseUrl(String raw) {
   if (s.isEmpty) return null;
   final hasScheme = s.startsWith('http://') || s.startsWith('https://');
   final candidate = hasScheme ? s : 'https://$s';
+  // Only allow http/https — block javascript:, data:, file:, etc.
+  if (!candidate.startsWith('http://') && !candidate.startsWith('https://')) {
+    return null;
+  }
   return Uri.tryParse(candidate);
 }
 
@@ -1300,8 +1359,26 @@ Future<void> showLinksSheet(BuildContext context, Part part) async {
 }
 
 /// Web export helpers
-String vehiclesToPrettyJson(List<Vehicle> vehicles) {
-  final obj = vehicles.map((v) => v.toJson()).toList();
+// Backup format version — increment if the data model changes in a
+// way that would make old backups incompatible.
+const int _kBackupFormatVersion = 2;
+
+Future<String> vehiclesToPrettyJson(List<Vehicle> vehicles) async {
+  final categories = await PartCategoryStorage.load();
+  final platforms = await PlatformStorage.load();
+  final presets = <String, dynamic>{};
+  for (final type in ItemType.values) {
+    presets[type.name] = await PresetGroupStorage.load(type);
+  }
+  final obj = {
+    'wrecklog_backup': true,
+    'format_version': _kBackupFormatVersion,
+    'exported_at': DateTime.now().toIso8601String(),
+    'vehicles': vehicles.map((v) => v.toJson()).toList(),
+    'part_categories': categories,
+    'listing_platforms': platforms,
+    'preset_groups': presets,
+  };
   const encoder = JsonEncoder.withIndent('  ');
   return encoder.convert(obj);
 }
@@ -1665,23 +1742,6 @@ class AppCard extends StatelessWidget {
   }
 }
 
-class _FormSectionLabel extends StatelessWidget {
-  final String label;
-  const _FormSectionLabel({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: const TextStyle(
-        color: Color(0xFFE8700A),
-        fontSize: 12,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.8,
-      ),
-    );
-  }
-}
 
 /// ----------------------------
 /// Vehicles Home
@@ -1714,6 +1774,8 @@ class _VehiclesHomeState extends State<VehiclesHome> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
   _VehicleSort _sort = _VehicleSort.newest;
+  // Cached painter — never recreated on setState, avoids object churn.
+  final _grainPainter = LeatherGrainPainter();
 
   @override
   void dispose() {
@@ -1769,45 +1831,6 @@ class _VehiclesHomeState extends State<VehiclesHome> {
             onPressed: onReload,
             icon: const Icon(Icons.refresh),
           ),
-          PopupMenuButton<String>(
-            onSelected: (v) async {
-              if (v == 'export_json') {
-                final content = vehiclesToPrettyJson(vehicles);
-                downloadTextFileWeb(filename: 'wrecklog_export.json', content: content);
-                return;
-              }
-
-              if (v == 'export_csv') {
-                final content = vehiclesToCsv(vehicles);
-                downloadTextFileWeb(filename: 'wrecklog_export.csv', content: content);
-                return;
-              }
-
-              if (v == 'wipe') {
-                final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Wipe all data?'),
-                        content: const Text('This clears all vehicles and parts from this browser/device.'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Wipe')),
-                        ],
-                      ),
-                    ) ??
-                    false;
-                if (!ok) return;
-                await Storage.wipeAll();
-                await onReload();
-              }
-            },
-            itemBuilder: (ctx) => const [
-              PopupMenuItem(value: 'export_json', child: Text('Export JSON')),
-              PopupMenuItem(value: 'export_csv', child: Text('Export CSV')),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'wipe', child: Text('Wipe all data')),
-            ],
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -1828,63 +1851,56 @@ class _VehiclesHomeState extends State<VehiclesHome> {
         icon: const Icon(Icons.add),
         label: const Text('Add Vehicle'),
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
+      body: Stack(
+        children: [
+          // Leather grain background — painter cached in state, never recreated.
+          SizedBox.expand(
+            child: CustomPaint(painter: _grainPainter),
+          ),
+          if (loading)
+            const Center(child: CircularProgressIndicator())
+          else
+            RefreshIndicator(
               onRefresh: onReload,
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 96),
                 children: [
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SectionTitle(
-                          title: 'Overview',
-                          subtitle: 'Profit/Loss is based on Sold parts only.',
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            WLBadge(text: 'Vehicles: ${vehicles.length}', color: Colors.white54, icon: Icons.directions_car),
-                            WLBadge(text: 'Revenue: ${formatMoneyFromCents(totalRevenue)}', color: Colors.white38, icon: Icons.payments),
-                            WLBadge(text: 'Purchase: ${formatMoneyFromCents(totalPurchase)}', color: const Color(0xFFE8700A), icon: Icons.shopping_cart),
-                            WLBadge(text: 'P/L: ${formatMoneyFromCents(totalPL)}', color: plColor, icon: Icons.trending_up),
-                          ],
-                        ),
-
-                        if (!isPro) ...[
-                          const SizedBox(height: 12),
-                          AppCard(
-                            child: Row(
-                              children: [
-                                const Icon(Icons.workspace_premium),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'Free tier: $kFreeVehicleLimit vehicle and $kFreePartLimitPerVehicle parts per vehicle. Upgrade to Pro for unlimited.',
-                                    style: Theme.of(context).textTheme.bodyMedium,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                FilledButton(
-                                  onPressed: () => showProPaywall(
-                                    context,
-                                    title: 'Upgrade to Pro',
-                                    message: 'Unlock unlimited vehicles and parts. You can restore purchases anytime from Settings.',
-                                  ),
-                                  child: const Text('Go Pro'),
-                                ),
-                              ],
+                  // ── Pro banner (compact) ──────────────────────────────
+                  if (!isPro) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: const Color(0xFFE8700A).withValues(alpha: 0.10),
+                        border: Border.all(color: const Color(0xFFE8700A).withValues(alpha: 0.25)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.workspace_premium, color: Color(0xFFE8700A), size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Free tier: $kFreeVehicleLimit vehicle · $kFreePartLimitPerVehicle parts each',
+                              style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.65)),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          GestureDetector(
+                            onTap: () => showProPaywall(
+                              context,
+                              title: 'Upgrade to Pro',
+                              message: 'Unlock unlimited vehicles and parts.',
+                            ),
+                            child: const Text(
+                              'Go Pro',
+                              style: TextStyle(color: Color(0xFFE8700A), fontWeight: FontWeight.w700, fontSize: 13),
                             ),
                           ),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
                   // ── Search + sort bar ─────────────────────────────────
                   if (vehicles.isNotEmpty) ...[
                     Row(
@@ -1927,6 +1943,29 @@ class _VehiclesHomeState extends State<VehiclesHome> {
                     ),
                     const SizedBox(height: 10),
                   ],
+                  // ── Slim stats strip ──────────────────────────────────
+                  if (vehicles.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Row(
+                        children: [
+                          Icon(Icons.directions_car_outlined, size: 14, color: Colors.white.withValues(alpha: 0.35)),
+                          const SizedBox(width: 5),
+                          Text(
+                            '${vehicles.length} vehicle${vehicles.length == 1 ? '' : 's'}',
+                            style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
+                          ),
+                          const SizedBox(width: 16),
+                          Icon(Icons.trending_up, size: 14, color: plColor.withValues(alpha: 0.7)),
+                          const SizedBox(width: 5),
+                          Text(
+                            'P/L ${formatMoneyFromCents(totalPL)}',
+                            style: TextStyle(fontSize: 12, color: plColor.withValues(alpha: 0.8), fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (vehicles.isEmpty)
                     _EmptyVehiclesState(
                       onAddVehicle: () async {
@@ -1949,6 +1988,7 @@ class _VehiclesHomeState extends State<VehiclesHome> {
                   else
                     ...filtered.map(
                       (v) => Padding(
+                        key: ValueKey(v.id),
                         padding: const EdgeInsets.only(bottom: 10),
                         child: VehicleCard(
                           vehicle: v,
@@ -1980,6 +2020,8 @@ class _VehiclesHomeState extends State<VehiclesHome> {
                 ],
               ),
             ),
+        ],
+      ),
     );
   }
 }
@@ -2193,6 +2235,91 @@ class _OnboardingStep extends StatelessWidget {
   }
 }
 
+void _showVehicleDetailsSheet(BuildContext context, Vehicle vehicle) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1E1E1E),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _VehicleDetailsSheet(vehicle: vehicle),
+  );
+}
+
+class _VehicleDetailsSheet extends StatelessWidget {
+  final Vehicle vehicle;
+  const _VehicleDetailsSheet({required this.vehicle});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+
+    if (vehicle.color.isNotEmpty) {
+      rows.add(_DetailRow(icon: Icons.palette_outlined, label: 'Colour', value: vehicle.color));
+    }
+    if (vehicle.usageValue != null) {
+      final unitLabel = vehicle.usageUnit == 'hours' ? 'Hours' : vehicle.usageUnit == 'miles' ? 'Miles' : 'Kilometres';
+      rows.add(_DetailRow(icon: Icons.speed_outlined, label: unitLabel,
+          value: '${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}'));
+    }
+    if (vehicle.purchasePriceCents != null) {
+      rows.add(_DetailRow(icon: Icons.attach_money, label: 'Purchase price',
+          value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
+    }
+    rows.add(_DetailRow(icon: Icons.flag_outlined, label: 'Status',
+        value: vehicle.status.label));
+    rows.add(_DetailRow(icon: Icons.calendar_today_outlined, label: 'Acquired',
+        value: '${vehicle.acquiredAt.day}/${vehicle.acquiredAt.month}/${vehicle.acquiredAt.year}'));
+    if ((vehicle.identifier ?? '').isNotEmpty) {
+      rows.add(_DetailRow(icon: Icons.tag, label: 'VIN / Rego / ID', value: vehicle.identifier!));
+    }
+    if ((vehicle.notes ?? '').trim().isNotEmpty) {
+      rows.add(_DetailRow(icon: Icons.notes_outlined, label: 'Notes', value: vehicle.notes!.trim()));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '${vehicle.year} ${vehicle.make} ${vehicle.model}',
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${vehicle.partsCount} parts  ·  ${vehicle.inStockCount} in stock',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          const Divider(color: Colors.white12),
+          const SizedBox(height: 8),
+          if (rows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text('No extra details recorded.', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
+            )
+          else
+            ...rows,
+        ],
+      ),
+    );
+  }
+}
+
 class VehicleCard extends StatelessWidget {
   final Vehicle vehicle;
   final VoidCallback onOpen;
@@ -2236,82 +2363,109 @@ class VehicleCard extends StatelessWidget {
     // Prefix is everything before P/L, joined with separators.
     final statPrefix = statParts.isEmpty ? '' : '${statParts.join('  ·  ')}${showPL ? '  ·  ' : ''}';
 
-    return Card(
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: BorderRadius.circular(16),
         onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF252525), Color(0xFF1A1A1A)],
+            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
           child: Row(
             children: [
-              // Type icon
+              // Orange accent bar
               Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8700A).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: const Color(0xFFE8700A).withValues(alpha: 0.25)),
+                width: 4,
+                height: 76,
+                decoration: const BoxDecoration(
+                  borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFFE8700A), Color(0xFFC45A06)],
+                  ),
                 ),
-                child: Icon(typeIcon, size: 22, color: const Color(0xFFE8700A)),
               ),
-              const SizedBox(width: 12),
-              // Title + stat line + notes
+              const SizedBox(width: 16),
+              // Type icon in circle
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFE8700A).withValues(alpha: 0.12),
+                ),
+                child: Icon(typeIcon, size: 24, color: const Color(0xFFE8700A)),
+              ),
+              const SizedBox(width: 14),
+              // Title + stats
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       _titleOrFallback(vehicle),
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      style: const TextStyle(
+                        color: Colors.white,
                         fontWeight: FontWeight.w800,
-                        fontSize: 15,
+                        fontSize: 16,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text.rich(
                       TextSpan(
                         style: const TextStyle(fontSize: 12),
                         children: [
                           TextSpan(
                             text: statPrefix,
-                            style: const TextStyle(color: Colors.white54),
+                            style: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
                           ),
                           if (showPL)
-                          TextSpan(
-                            text: 'P/L $plStr',
-                            style: TextStyle(
-                              color: plColor,
-                              fontWeight: FontWeight.w600,
+                            TextSpan(
+                              text: 'P/L $plStr',
+                              style: TextStyle(color: plColor, fontWeight: FontWeight.w600),
                             ),
-                          ),
                         ],
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    // Damage / notes bar — only shown when present
                     if ((vehicle.notes ?? '').trim().isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.warning_amber_outlined, size: 12, color: Colors.orange),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              vehicle.notes!,
-                              style: const TextStyle(color: Colors.orange, fontSize: 11),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 4),
+                      Text(
+                        vehicle.notes!,
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],
                 ),
+              ),
+              // Info button — opens vehicle details sheet
+              IconButton(
+                onPressed: () => _showVehicleDetailsSheet(context, vehicle),
+                icon: const Icon(Icons.info_outline, color: Colors.green, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
               ),
               // 3-dot menu
               PopupMenuButton<String>(
@@ -2321,6 +2475,7 @@ class VehicleCard extends StatelessWidget {
                 ],
                 padding: EdgeInsets.zero,
                 iconSize: 20,
+                icon: Icon(Icons.more_vert, color: Colors.white.withValues(alpha: 0.3), size: 20),
               ),
             ],
           ),
@@ -2519,6 +2674,7 @@ class _ModelAutocompleteFieldState extends State<_ModelAutocompleteField> {
         validator: widget.validator,
         textInputAction: TextInputAction.next,
         textCapitalization: TextCapitalization.words,
+        inputFormatters: [LengthLimitingTextInputFormatter(60)],
       );
     }
 
@@ -2546,6 +2702,7 @@ class _ModelAutocompleteFieldState extends State<_ModelAutocompleteField> {
           validator: widget.validator,
           textInputAction: TextInputAction.next,
           textCapitalization: TextCapitalization.words,
+          inputFormatters: [LengthLimitingTextInputFormatter(60)],
           onFieldSubmitted: (_) => onFieldSubmitted(),
         );
       },
@@ -2613,6 +2770,7 @@ class _MakeAutocompleteField extends StatelessWidget {
         validator: validator,
         textInputAction: TextInputAction.next,
         textCapitalization: TextCapitalization.words,
+        inputFormatters: [LengthLimitingTextInputFormatter(60)],
       );
     }
 
@@ -2642,6 +2800,7 @@ class _MakeAutocompleteField extends StatelessWidget {
           validator: validator,
           textInputAction: TextInputAction.next,
           textCapitalization: TextCapitalization.words,
+          inputFormatters: [LengthLimitingTextInputFormatter(60)],
           onFieldSubmitted: (_) => onFieldSubmitted(),
         );
       },
@@ -2731,7 +2890,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
     setState(() => _acquiredAt = picked);
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final year = int.tryParse(_yearCtrl.text.trim()) ?? DateTime.now().year;
@@ -2757,8 +2916,8 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
       notes: notes.isEmpty ? null : notes,
     );
 
-    RecentModelStorage.add(_itemType, v.make, v.model);
-    Navigator.of(context).pop(v);
+    await RecentModelStorage.add(_itemType, v.make, v.model);
+    if (mounted) Navigator.of(context).pop(v);
   }
 
   @override
@@ -2833,6 +2992,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                     ),
                     textCapitalization: TextCapitalization.characters,
                     textInputAction: TextInputAction.next,
+                    inputFormatters: [LengthLimitingTextInputFormatter(50)],
                     onChanged: (v) {
                       final upper = v.toUpperCase();
                       if (v != upper) {
@@ -2853,6 +3013,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                     ),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
+                    inputFormatters: [LengthLimitingTextInputFormatter(50)],
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -2908,6 +3069,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                       alignLabelWithHint: true,
                     ),
                     maxLines: 3,
+                    maxLength: 2000,
                     textCapitalization: TextCapitalization.sentences,
                   ),
                   const SizedBox(height: 12),
@@ -2999,7 +3161,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
     setState(() => _acquiredAt = picked);
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final year = int.tryParse(_yearCtrl.text.trim()) ?? widget.vehicle.year;
@@ -3025,8 +3187,8 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       notes: notes.isEmpty ? null : notes,
     );
 
-    RecentModelStorage.add(_itemType, updated.make, updated.model);
-    Navigator.of(context).pop(updated);
+    await RecentModelStorage.add(_itemType, updated.make, updated.model);
+    if (mounted) Navigator.of(context).pop(updated);
   }
 
   @override
@@ -3035,7 +3197,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       appBar: AppBar(
         title: const Text('Edit Vehicle'),
         actions: [
-          FilledButton(onPressed: _save, child: const Text('Save')),
+          FilledButton(onPressed: () => _save(), child: const Text('Save')),
           const SizedBox(width: 10),
         ],
       ),
@@ -3170,6 +3332,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                       alignLabelWithHint: true,
                     ),
                     maxLines: 3,
+                    maxLength: 2000,
                     textCapitalization: TextCapitalization.sentences,
                   ),
                   const SizedBox(height: 12),
@@ -3213,6 +3376,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   _PartsViewFilter _filter = _PartsViewFilter.all;
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  List<String> _categories = List.from(kPartCategories);
 
   @override
   void initState() {
@@ -3221,6 +3385,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     _searchCtrl.addListener(() {
       setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
     });
+    PartCategoryStorage.load().then((cats) {
+      if (mounted) setState(() => _categories = cats);
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
   }
 
   @override
@@ -3244,12 +3411,12 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
         title: 'Free parts limit reached',
         message: 'Free WreckLog allows $kFreePartLimitPerVehicle parts per vehicle. Upgrade to Pro for unlimited parts.',
       );
-      return;
+      if (!mounted) return;
     }
     final created = await Navigator.of(context).push<Part>(
       MaterialPageRoute(builder: (_) => AddPartScreen(allVehicles: _allVehiclesWithCurrent())),
     );
-    if (created == null) return;
+    if (!mounted || created == null) return;
     setState(() {
       normalizePartStateFromListings(created);
       _v.parts.insert(0, created);
@@ -3413,6 +3580,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       ),
     );
 
+    ctrl.dispose();
     if (cents == null) return;
 
     setState(() {
@@ -3504,34 +3672,97 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     }
   }
 
-  Future<void> _endAllListingsForVehicle() async {
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('End all listings?'),
-            content: const Text('This will mark every listing link on this vehicle as NOT live.'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('End all')),
-            ],
-          ),
-        ) ??
-        false;
 
-    if (!ok) return;
-
-    setState(() {
-      for (final p in _v.parts) {
-        for (final l in p.listings) {
-          l.isLive = false;
-        }
-        normalizePartStateFromListings(p);
-      }
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All listings ended')));
+  List<Widget> _buildGroupedParts(List<Part> parts, BuildContext context) {
+    // Group parts by category
+    final Map<String, List<Part>> groups = {};
+    for (final p in parts) {
+      final key = (p.category?.trim().isNotEmpty == true) ? p.category! : 'Uncategorised';
+      groups.putIfAbsent(key, () => []).add(p);
     }
+
+    // Order: user-defined categories first (in their order), custom next, Uncategorised last
+    final ordered = [
+      ..._categories.where(groups.containsKey),
+      ...groups.keys.where((k) => !_categories.contains(k) && k != 'Uncategorised'),
+      if (groups.containsKey('Uncategorised')) 'Uncategorised',
+    ];
+
+    return ordered.map((cat) {
+      final catParts = groups[cat]!;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              initiallyExpanded: true,
+              tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              backgroundColor: Colors.white.withValues(alpha: 0.03),
+              collapsedBackgroundColor: Colors.white.withValues(alpha: 0.03),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              collapsedShape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              title: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8700A),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    cat,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${catParts.length}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ],
+              ),
+              children: catParts.map((p) => Padding(
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                child: GestureDetector(
+                  onTap: () => _openPartDetail(p),
+                  child: PartCard(
+                    part: p,
+                    onEdit: () => _editPart(p),
+                    onDelete: () => _deletePart(p),
+                    onMarkSold: () => _setSold(p),
+                    onMarkScrapped: () => _setScrapped(p),
+                    onMarkInStock: () => _setInStock(p),
+                    onOpenLinks: () => showLinksSheet(context, p),
+                    onAddToCommonParts: () => showAddToCommonPartsSheet(
+                      context,
+                      partName: p.name,
+                      itemType: _v.itemType,
+                    ),
+                  ),
+                ),
+              )).toList(),
+            ),
+          ),
+        ),
+      );
+    }).toList();
   }
 
   List<Part> _filteredParts() {
@@ -3574,151 +3805,212 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     final plColor = profitColor(pl);
 
     final notListed = _v.inStockCount - _v.listedLiveCount;
-    final notListedColor = notListed > 0 ? Colors.orange : Colors.white38;
-
     final shownParts = _filteredParts();
 
-    return Scaffold(
+    final infoParts = <String>[];
+    if ((_v.identifier ?? '').trim().isNotEmpty) infoParts.add(_v.identifier!.trim());
+    if (_v.color.trim().isNotEmpty) infoParts.add(_v.color.trim());
+    if (_v.usageValue != null) infoParts.add('${_formatUsage(_v.usageValue!)} ${_v.usageUnit}');
+    final infoLine = infoParts.join('  ·  ');
+
+    Widget statBox(String value, String label, Color color, {bool active = false, VoidCallback? onTap}) {
+      return Expanded(
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: active ? color.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
+              border: Border.all(
+                color: active ? color.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.07),
+              ),
+            ),
+            child: Column(
+              children: [
+                Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: color)),
+                const SizedBox(height: 2),
+                Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.45))),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget filterPill(String label, _PartsViewFilter f) {
+      final active = _filter == f;
+      return GestureDetector(
+        onTap: () => setState(() => _filter = f),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: active ? const Color(0xFFE8700A) : Colors.white.withValues(alpha: 0.07),
+            border: Border.all(
+              color: active ? const Color(0xFFE8700A) : Colors.white.withValues(alpha: 0.12),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: active ? Colors.white : Colors.white.withValues(alpha: 0.55),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // PopScope ensures the latest vehicle state is always returned to the
+    // parent (and thus persisted) even when the user navigates back via
+    // system gesture or hardware button, not just the explicit back arrow.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _saveAndExit();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_titleOrFallback(_v)),
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _saveAndExit),
         actions: [
           IconButton(
-            tooltip: 'End all listings',
-            onPressed: _endAllListingsForVehicle,
-            icon: const Icon(Icons.link_off),
-          ),
-          IconButton(
-            tooltip: 'Add common parts',
-            onPressed: _quickAddPresets,
-            icon: const Icon(Icons.playlist_add),
-          ),
-          IconButton(
             tooltip: 'Edit vehicle',
             onPressed: _editVehicle,
-            icon: const Icon(Icons.edit),
+            icon: const Icon(Icons.edit_outlined),
           ),
-          FilledButton(onPressed: _saveAndExit, child: const Text('Done')),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
             tooltip: 'More options',
             onSelected: (value) async {
+              if (value == 'quick_add') await _quickAddPresets();
               if (value == 'delete_sold_photos') await _deleteSoldPartPhotos();
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'delete_sold_photos',
-                child: ListTile(
-                  leading: Icon(Icons.delete_sweep_outlined),
-                  title: Text('Delete photos of sold parts'),
-                  subtitle: Text('Free up storage'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
+              const PopupMenuItem(value: 'quick_add', child: ListTile(
+                leading: Icon(Icons.playlist_add),
+                title: Text('Add common parts'),
+                contentPadding: EdgeInsets.zero,
+              )),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'delete_sold_photos', child: ListTile(
+                leading: Icon(Icons.delete_sweep_outlined),
+                title: Text('Delete photos of sold parts'),
+                contentPadding: EdgeInsets.zero,
+              )),
             ],
           ),
           const SizedBox(width: 4),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addPart,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Part'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 96),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          FloatingActionButton.small(
+            heroTag: 'fab_common_parts',
+            onPressed: _quickAddPresets,
+            tooltip: 'Add common parts',
+            child: const Icon(Icons.playlist_add),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'fab_add_part',
+            onPressed: _addPart,
+            icon: const Icon(Icons.add),
+            label: const Text('Add Part'),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          SizedBox.expand(
+            child: CustomPaint(painter: LeatherGrainPainter()),
+          ),
+          ListView(
+            padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 96),
+            children: [
+              // ── Vehicle info line ────────────────────────────────────────
+          if (infoLine.isNotEmpty) ...[
+            Text(
+              infoLine,
+              style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 10),
+          ],
+          if ((_v.notes ?? '').trim().isNotEmpty) ...[
+            Row(
+              children: [
+                Icon(Icons.warning_amber_outlined, size: 14, color: Colors.orange.withValues(alpha: 0.8)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _v.notes!,
+                    style: TextStyle(fontSize: 12, color: Colors.orange.withValues(alpha: 0.75)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+
+          // ── 4 stat boxes ─────────────────────────────────────────────
+          Row(
+            children: [
+              statBox('${_v.partsCount}', 'Parts', Colors.white60,
+                active: _filter == _PartsViewFilter.all,
+                onTap: () => setState(() => _filter = _PartsViewFilter.all)),
+              const SizedBox(width: 8),
+              statBox('${_v.inStockCount}', 'In Stock', const Color(0xFFE8700A)),
+              const SizedBox(width: 8),
+              statBox('${_v.listedLiveCount}', 'Listed', Colors.green,
+                active: _filter == _PartsViewFilter.listed,
+                onTap: () => setState(() => _filter = _PartsViewFilter.listed)),
+              const SizedBox(width: 8),
+              statBox(formatMoneyFromCents(pl), 'P&L', plColor),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Filter pills + part count ────────────────────────────────
+          Row(
+            children: [
+              filterPill('All', _PartsViewFilter.all),
+              const SizedBox(width: 8),
+              filterPill('Listed', _PartsViewFilter.listed),
+              const SizedBox(width: 8),
+              filterPill('Unlisted ($notListed)', _PartsViewFilter.notListed),
+              const Spacer(),
+              Text(
+                '${shownParts.length} part${shownParts.length == 1 ? '' : 's'}',
+                style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
           // ── Search bar ───────────────────────────────────────────────
           TextField(
             controller: _searchCtrl,
             decoration: InputDecoration(
-              hintText: 'Search parts by name, location, part number...',
-              prefixIcon: const Icon(Icons.search),
+              hintText: 'Search parts...',
+              prefixIcon: const Icon(Icons.search, size: 18),
               suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear),
+                      icon: const Icon(Icons.clear, size: 16),
                       onPressed: () {
                         _searchCtrl.clear();
                         setState(() => _searchQuery = '');
                       },
                     )
                   : null,
-            ),
-          ),
-          const SizedBox(height: 12),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SectionTitle(
-                  title: 'Summary',
-                  subtitle: 'Tap badges to filter parts.',
-                  trailing: Wrap(
-                    spacing: 10,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _quickAddPresets,
-                        icon: const Icon(Icons.playlist_add),
-                        label: const Text('Add common parts'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    WLBadge(text: _v.itemType.label, color: Colors.white54, icon: Icons.category),
-                    if ((_v.notes ?? '').trim().isNotEmpty)
-                      WLBadge(text: _v.notes!, color: Colors.orange.withValues(alpha: 0.8), icon: Icons.warning_amber_outlined),
-                    WLBadge(text: formatDateShort(_v.acquiredAt), color: Colors.white38, icon: Icons.calendar_today),
-                    if ((_v.identifier ?? '').trim().isNotEmpty)
-                      WLBadge(text: _v.identifier!, color: Colors.white38, icon: Icons.badge),
-                    if (_v.color.trim().isNotEmpty)
-                      WLBadge(text: _v.color.trim(), color: Colors.white54, icon: Icons.palette_outlined),
-                    if (_v.usageValue != null)
-                      WLBadge(
-                        text: '${_formatUsage(_v.usageValue!)} ${_v.usageUnit}',
-                        color: Colors.white38,
-                        icon: Icons.speed_outlined,
-                      ),
-
-                    // FILTER BADGES — tappable to filter parts list
-                    WLBadge(
-                      text: '${_v.partsCount} parts',
-                      color: _filter == _PartsViewFilter.all ? const Color(0xFFE8700A) : Colors.white38,
-                      icon: Icons.inventory_2,
-                      onTap: () => setState(() => _filter = _PartsViewFilter.all),
-                    ),
-                    WLBadge(text: 'In stock: ${_v.inStockCount}', color: const Color(0xFFE8700A), icon: Icons.warehouse),
-                    WLBadge(
-                      text: 'Listed: ${_v.listedLiveCount}',
-                      color: _filter == _PartsViewFilter.listed ? const Color(0xFFE8700A) : Colors.white54,
-                      icon: Icons.link,
-                      onTap: () => setState(() => _filter = _PartsViewFilter.listed),
-                    ),
-                    WLBadge(
-                      text: 'Not listed: $notListed',
-                      color: _filter == _PartsViewFilter.notListed ? notListedColor : Colors.white38,
-                      icon: Icons.warning_amber,
-                      onTap: () => setState(() => _filter = _PartsViewFilter.notListed),
-                    ),
-                    if (_filter != _PartsViewFilter.all)
-                      WLBadge(text: 'Clear filter', color: Colors.grey, icon: Icons.clear, onTap: () => setState(() => _filter = _PartsViewFilter.all)),
-                    WLBadge(text: 'Revenue: ${formatMoneyFromCents(_v.soldRevenueCents)}', color: Colors.white38, icon: Icons.payments),
-                    WLBadge(text: 'P/L: ${formatMoneyFromCents(pl)}', color: plColor, icon: Icons.trending_up),
-                  ],
-                ),
-                if (_filter != _PartsViewFilter.all) ...[
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: () => setState(() => _filter = _PartsViewFilter.all),
-                    icon: const Icon(Icons.clear),
-                    label: Text('Show all parts (${_v.partsCount})'),
-                  ),
-                ],
-              ],
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              isDense: true,
             ),
           ),
           const SizedBox(height: 12),
@@ -3752,34 +4044,13 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                 ],
               ),
             )
-          else
-            ...shownParts.map(
-              (p) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                // Tap anywhere on the card → PartDetailScreen.
-                // The 3-dot menu inside the card still handles edit/delete/etc.
-                child: GestureDetector(
-                  onTap: () => _openPartDetail(p),
-                  child: PartCard(
-                    part: p,
-                    onEdit: () => _editPart(p),
-                    onDelete: () => _deletePart(p),
-                    onMarkSold: () => _setSold(p),
-                    onMarkScrapped: () => _setScrapped(p),
-                    onMarkInStock: () => _setInStock(p),
-                    onOpenLinks: () => showLinksSheet(context, p),
-                    onAddToCommonParts: () => showAddToCommonPartsSheet(
-                      context,
-                      partName: p.name,
-                      itemType: _v.itemType,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          else ..._buildGroupedParts(shownParts, context),
+            ],
+          ),
         ],
       ),
-    );
+    ), // Scaffold
+    ); // PopScope
   }
 }
 
@@ -3945,7 +4216,6 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     // Use live _part (may have been updated by _edit())
     final part = _part;
     final vehicle = widget.vehicle;
-    final vehicleTitle = vehicle != null ? _titleOrFallback(vehicle) : '(vehicle missing)';
     final usageStr = (vehicle?.usageValue != null && vehicle!.usageValue! > 0)
         ? '${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}'
         : null;
@@ -4045,16 +4315,35 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
               children: [
                 const SectionTitle(title: 'Source vehicle'),
 
-                _DetailRow(
-                  icon: Icons.directions_car_outlined,
-                  label: 'Vehicle',
-                  value: vehicleTitle,
-                ),
+                if (vehicle != null) ...[
+                  _DetailRow(
+                    icon: Icons.calendar_today_outlined,
+                    label: 'Year',
+                    value: vehicle.year.toString(),
+                  ),
+                  if (vehicle.make.trim().isNotEmpty)
+                    _DetailRow(
+                      icon: Icons.directions_car_outlined,
+                      label: 'Make',
+                      value: vehicle.make,
+                    ),
+                  if (vehicle.model.trim().isNotEmpty)
+                    _DetailRow(
+                      icon: Icons.commute_outlined,
+                      label: 'Model',
+                      value: vehicle.model,
+                    ),
+                ] else
+                  const _DetailRow(
+                    icon: Icons.directions_car_outlined,
+                    label: 'Vehicle',
+                    value: '(vehicle missing)',
+                  ),
 
                 if (usageStr != null)
                   _DetailRow(
                     icon: Icons.speed_outlined,
-                    label: 'Usage',
+                    label: 'KMs / Usage',
                     value: usageStr,
                   ),
 
@@ -4113,6 +4402,83 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
                     part.notes!,
                     style: const TextStyle(color: Colors.white70, height: 1.5),
                   ),
+                ],
+              ),
+            ),
+          ],
+
+          // ── Listings ─────────────────────────────────────────────────────
+          if (part.listings.isNotEmpty) ...[
+            const SizedBox(height: kPad),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SectionTitle(title: 'Listings (${part.liveLinksCount} live)'),
+                  ...part.listings.map((l) => Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.circle,
+                              size: 9,
+                              color: l.isLive ? Colors.green : Colors.white24,
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Text(
+                                l.displayPlatformName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (l.url.trim().isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          GestureDetector(
+                            onTap: () => openUrlEasy(context, l.url),
+                            child: Text(
+                              l.url,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.blue.shade300,
+                                decoration: TextDecoration.underline,
+                                decorationColor: Colors.blue.shade300,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => copyToClipboard(context, l.url, message: 'Link copied'),
+                                  icon: const Icon(Icons.copy, size: 14),
+                                  label: const Text('Copy'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: () => openUrlEasy(context, l.url),
+                                  icon: const Icon(Icons.open_in_new, size: 14),
+                                  label: const Text('Open'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  )),
                 ],
               ),
             ),
@@ -4285,39 +4651,65 @@ class PartCard extends StatelessWidget {
                 ? ('Listed',  Colors.green,          false)
                 : ('In Stock', Colors.white38,       false);
 
-    // ── Stat line: price · stock ID · location · age ─────────────────────────
+    // ── Left bar colour ───────────────────────────────────────────────────────
+    final barColor = isScrapped
+        ? Colors.grey
+        : isSold
+            ? const Color(0xFF2E7D32)
+            : isListed
+                ? Colors.green
+                : const Color(0xFFE8700A);
+
+    // ── Stat line: stock ID · age · price ────────────────────────────────────
     final statParts = <String>[];
-    if (part.askingPriceCents != null) {
-      statParts.add(formatMoneyFromCents(part.askingPriceCents!));
-    }
-    if (isSold && part.salePriceCents != null) {
-      statParts.add('Sold ${formatMoneyFromCents(part.salePriceCents!)}');
-    }
     if ((part.stockId ?? '').trim().isNotEmpty) {
       statParts.add(part.stockId!);
     }
-    if ((part.location ?? '').trim().isNotEmpty) {
-      statParts.add(part.location!);
-    }
+    statParts.add('${days}d');
     if (part.qty > 1) {
       statParts.add('Qty ${part.qty}');
     }
-    statParts.add('${days}d');
+    if (isSold && part.salePriceCents != null) {
+      statParts.add(formatMoneyFromCents(part.salePriceCents!));
+    } else if (!isScrapped && part.askingPriceCents != null) {
+      statParts.add(formatMoneyFromCents(part.askingPriceCents!));
+    }
     final statLine = statParts.join('  ·  ');
 
-    return Card(
-      shape: isScrapped
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(kRadius),
-              side: const BorderSide(color: Colors.red, width: 2),
-            )
-          : null,
-      child: Opacity(
-        opacity: isScrapped ? 0.88 : 1.0,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+    return Opacity(
+      opacity: isScrapped ? 0.6 : 1.0,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF252525), Color(0xFF1A1A1A)],
+            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
           child: Row(
             children: [
+              // ── Left colour bar ────────────────────────────────────────────
+              Container(
+                width: 4,
+                height: 66,
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                  color: barColor,
+                ),
+              ),
+              const SizedBox(width: 14),
               // ── Name + stat line ───────────────────────────────────────────
               Expanded(
                 child: Column(
@@ -4325,8 +4717,9 @@ class PartCard extends StatelessWidget {
                   children: [
                     Text(
                       part.name,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
                         fontSize: 15,
                       ),
                       maxLines: 1,
@@ -4335,14 +4728,14 @@ class PartCard extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       statLine,
-                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               // ── State badge ────────────────────────────────────────────────
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -4374,6 +4767,7 @@ class PartCard extends StatelessWidget {
                 },
                 padding: EdgeInsets.zero,
                 iconSize: 20,
+                icon: Icon(Icons.more_vert, color: Colors.white.withValues(alpha: 0.3), size: 20),
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: 'edit', child: ListTile(
                     leading: Icon(Icons.edit_outlined),
@@ -4449,6 +4843,8 @@ class _AddPartScreenState extends State<AddPartScreen> {
   final _notesCtrl = TextEditingController();
   final _linkCtrl = TextEditingController();
   bool _showLink = false;
+  String? _category;
+  List<String> _categories = List.from(kPartCategories);
 
   /// Generated once on initState, shown read-only to the user.
   late final String _stockId;
@@ -4456,8 +4852,10 @@ class _AddPartScreenState extends State<AddPartScreen> {
   @override
   void initState() {
     super.initState();
-    // Generate a unique stock ID against all existing parts.
     _stockId = generateUniqueStockId(widget.allVehicles);
+    PartCategoryStorage.load().then((cats) {
+      if (mounted) setState(() => _categories = cats);
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
   }
 
   @override
@@ -4486,13 +4884,12 @@ class _AddPartScreenState extends State<AddPartScreen> {
     final url = _linkCtrl.text.trim();
     final listings = <Listing>[];
     if (url.isNotEmpty) {
-      final det = detectPlatformFromUrl(url);
+      final detected = detectPlatformFromUrl(url);
       listings.add(Listing(
         id: newId(),
-        preset: det.preset,
-        customPlatformName: det.suggestedCustomName,
+        platform: detected.isNotEmpty ? detected : 'Other',
         url: url,
-        isLive: false, // not live until user explicitly marks it
+        isLive: true,
         createdAt: DateTime.now(),
       ));
     }
@@ -4509,6 +4906,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
       qty: qty < 1 ? 1 : qty,
       listings: listings,
       stockId: _stockId,
+      category: _category,
     );
 
     Navigator.of(context).pop(p);
@@ -4516,52 +4914,27 @@ class _AddPartScreenState extends State<AddPartScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const divider = Padding(
+      padding: EdgeInsets.symmetric(vertical: 16),
+      child: Divider(color: Colors.white12, height: 1),
+    );
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Part'),
-        actions: [
-          FilledButton(onPressed: _save, child: const Text('Save')),
-          const SizedBox(width: 10),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Add Part')),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(kPad),
+          padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 32),
           children: [
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const _FormSectionLabel(label: 'Part Details'),
-                  const SizedBox(height: 12),
-                  // Stock ID — read-only, generated before save
-                  TextFormField(
-                    initialValue: _stockId,
-                    readOnly: true,
-                    decoration: InputDecoration(
-                      labelText: 'Stock ID',
-                      prefixIcon: const Icon(Icons.qr_code_outlined),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.04),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.copy_outlined, size: 18),
-                        tooltip: 'Copy stock ID',
-                        onPressed: () => copyToClipboard(context, _stockId, message: 'Stock ID copied'),
-                      ),
-                    ),
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      letterSpacing: 1.5,
-                      color: Color(0xFFE8700A),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                  // ── Part name ─────────────────────────────────────────
                   TextFormField(
                     controller: _nameCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Part name',
+                      labelText: 'Part name *',
                       hintText: 'Tailgate / Headlight / ECU',
                       prefixIcon: Icon(Icons.inventory_2_outlined),
                     ),
@@ -4569,8 +4942,30 @@ class _AddPartScreenState extends State<AddPartScreen> {
                     textCapitalization: TextCapitalization.words,
                     validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                     textInputAction: TextInputAction.next,
+                    inputFormatters: [LengthLimitingTextInputFormatter(150)],
                   ),
                   const SizedBox(height: 12),
+                  // ── Category ──────────────────────────────────────────
+                  DropdownButtonFormField<String>(
+                    initialValue: _categories.contains(_category) ? _category : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      prefixIcon: Icon(Icons.category_outlined),
+                    ),
+                    hint: const Text('Uncategorised'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Uncategorised')),
+                      ..._categories.map((c) => DropdownMenuItem(value: c, child: Text(c))),
+                    ],
+                    onChanged: (v) => setState(() => _category = v),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Manage categories in Settings → Part Categories',
+                    style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  const SizedBox(height: 12),
+                  // ── Part number + Qty ─────────────────────────────────
                   Row(
                     children: [
                       Expanded(
@@ -4582,6 +4977,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                             prefixIcon: Icon(Icons.confirmation_number_outlined),
                           ),
                           textInputAction: TextInputAction.next,
+                          inputFormatters: [LengthLimitingTextInputFormatter(100)],
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -4601,18 +4997,10 @@ class _AddPartScreenState extends State<AddPartScreen> {
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
 
-            const SizedBox(height: 12),
+                  divider,
 
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _FormSectionLabel(label: 'Location & Pricing'),
-                  const SizedBox(height: 12),
+                  // ── Location & Pricing ────────────────────────────────
                   TextFormField(
                     controller: _locCtrl,
                     decoration: const InputDecoration(
@@ -4621,6 +5009,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                       prefixIcon: Icon(Icons.place_outlined),
                     ),
                     textInputAction: TextInputAction.next,
+                    inputFormatters: [LengthLimitingTextInputFormatter(150)],
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -4634,63 +5023,62 @@ class _AddPartScreenState extends State<AddPartScreen> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     textInputAction: TextInputAction.next,
                   ),
-                ],
-              ),
-            ),
 
-            const SizedBox(height: 12),
+                  divider,
 
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _FormSectionLabel(label: 'Notes'),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Condition, colour, fitment details, anything useful.',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
-                  const SizedBox(height: 12),
+                  // ── Notes ─────────────────────────────────────────────
                   TextFormField(
                     controller: _notesCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Notes',
-                      hintText: 'e.g. Silver, small dent on left side, fits 2018-2022',
+                      hintText: 'Condition, colour, fitment, anything useful…',
                       prefixIcon: Icon(Icons.notes_outlined),
                       alignLabelWithHint: true,
                     ),
-                    maxLines: 4,
+                    maxLines: 3,
+                    maxLength: 2000,
                     textCapitalization: TextCapitalization.sentences,
                     textInputAction: TextInputAction.newline,
                   ),
-                ],
-              ),
-            ),
 
-            const SizedBox(height: 12),
+                  divider,
 
-            // ── Optional listing link ───────────────────────────────────
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.link, size: 16, color: Colors.white38),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text('Listing link (optional)',
-                            style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                  // ── Listing link ──────────────────────────────────────
+                  InkWell(
+                    onTap: () => setState(() => _showLink = !_showLink),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _showLink ? Icons.link_off : Icons.link,
+                            size: 18,
+                            color: Colors.white38,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Listing link',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 14,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            _showLink ? 'Remove' : 'Add',
+                            style: const TextStyle(
+                              color: Color(0xFFE8700A),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
-                      TextButton(
-                        onPressed: () => setState(() => _showLink = !_showLink),
-                        child: Text(_showLink ? 'Hide' : 'Add link',
-                            style: const TextStyle(fontSize: 12)),
-                      ),
-                    ],
+                    ),
                   ),
                   if (_showLink) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _linkCtrl,
                       decoration: const InputDecoration(
@@ -4702,17 +5090,63 @@ class _AddPartScreenState extends State<AddPartScreen> {
                       textInputAction: TextInputAction.done,
                       autocorrect: false,
                     ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Any platform — eBay, Facebook, Gumtree, Craigslist, etc.',
-                      style: TextStyle(color: Colors.white38, fontSize: 11),
-                    ),
                   ],
+
+                  divider,
+
+                  // ── Stock ID (collapsed by default) ───────────────────
+                  Row(
+                    children: [
+                      const Icon(Icons.qr_code_outlined, size: 16, color: Colors.white24),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Stock ID: ',
+                        style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+                      ),
+                      Text(
+                        _stockId,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'monospace',
+                          letterSpacing: 1.2,
+                          color: Color(0xFFE8700A),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.copy_outlined, size: 16),
+                        color: Colors.white24,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        tooltip: 'Copy stock ID',
+                        onPressed: () => copyToClipboard(context, _stockId, message: 'Stock ID copied'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 80),
+            const SizedBox(height: 20),
+
+            // ── Save button ───────────────────────────────────────────────
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE8700A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Save Part'),
+              ),
+            ),
+
+            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -4735,6 +5169,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
   final _formKey = GlobalKey<FormState>();
 
   late Part _p;
+  List<String> _categories = List.from(kPartCategories);
 
   late final TextEditingController _nameCtrl;
   late final TextEditingController _locCtrl;
@@ -4747,6 +5182,9 @@ class _EditPartDialogState extends State<EditPartDialog> {
   void initState() {
     super.initState();
     _p = Part.fromJson(widget.part.toJson());
+    PartCategoryStorage.load().then((cats) {
+      if (mounted) setState(() => _categories = cats);
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
     _nameCtrl = TextEditingController(text: _p.name);
     _locCtrl = TextEditingController(text: _p.location ?? '');
     _askCtrl = TextEditingController(
@@ -4857,11 +5295,24 @@ class _EditPartDialogState extends State<EditPartDialog> {
                 controller: _nameCtrl,
                 decoration: const InputDecoration(labelText: 'Part name'),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                inputFormatters: [LengthLimitingTextInputFormatter(150)],
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: _categories.contains(_p.category) ? _p.category : null,
+                decoration: const InputDecoration(labelText: 'Category'),
+                hint: const Text('Uncategorised'),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Uncategorised')),
+                  ..._categories.map((c) => DropdownMenuItem(value: c, child: Text(c))),
+                ],
+                onChanged: (v) => setState(() => _p.category = v),
               ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: _pnCtrl,
                 decoration: const InputDecoration(labelText: 'Part number (optional)'),
+                inputFormatters: [LengthLimitingTextInputFormatter(100)],
               ),
               const SizedBox(height: 10),
               TextFormField(
@@ -4878,6 +5329,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
               TextFormField(
                 controller: _locCtrl,
                 decoration: const InputDecoration(labelText: 'Location (optional)'),
+                inputFormatters: [LengthLimitingTextInputFormatter(150)],
               ),
               const SizedBox(height: 10),
               TextFormField(
@@ -4898,6 +5350,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
                   alignLabelWithHint: true,
                 ),
                 maxLines: 3,
+                maxLength: 2000,
                 textCapitalization: TextCapitalization.sentences,
               ),
               const SizedBox(height: 14),
@@ -4936,13 +5389,6 @@ class _EditPartDialogState extends State<EditPartDialog> {
                                     l.displayPlatformName,
                                     style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
                                   ),
-                                ),
-                                Switch(
-                                  value: l.isLive,
-                                  onChanged: (v) => setState(() {
-                                    l.isLive = v;
-                                    normalizePartStateFromListings(_p);
-                                  }),
                                 ),
                                 PopupMenuButton<String>(
                                   onSelected: (v) {
@@ -5024,46 +5470,48 @@ class AddListingDialog extends StatefulWidget {
 class _AddListingDialogState extends State<AddListingDialog> {
   final _formKey = GlobalKey<FormState>();
   final _urlCtrl = TextEditingController();
-  final _customCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
 
-  ListingPlatformPreset _preset = ListingPlatformPreset.ebay;
-  bool _isLive = true;
+  List<String> _platforms = List.from(kDefaultPlatforms);
+  String? _platform;
+
+  @override
+  void initState() {
+    super.initState();
+    PlatformStorage.load().then((p) {
+      if (mounted) {
+        setState(() {
+          _platforms = p;
+          _platform ??= p.isNotEmpty ? p.first : null;
+        });
+      }
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PlatformStorage.load failed: $e'); });
+  }
 
   @override
   void dispose() {
     _urlCtrl.dispose();
-    _customCtrl.dispose();
     _priceCtrl.dispose();
     super.dispose();
   }
 
   void _applyDetection() {
-    final det = detectPlatformFromUrl(_urlCtrl.text);
-    setState(() {
-      _preset = det.preset;
-      if (det.preset == ListingPlatformPreset.custom && det.suggestedCustomName != null) {
-        _customCtrl.text = det.suggestedCustomName!;
-      }
-    });
+    final detected = detectPlatformFromUrl(_urlCtrl.text);
+    if (detected.isNotEmpty && _platforms.contains(detected)) {
+      setState(() => _platform = detected);
+    }
   }
 
   void _save() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-
-    final listedCents = parseMoneyToCents(_priceCtrl.text);
-    final customName = _preset == ListingPlatformPreset.custom ? _customCtrl.text.trim() : null;
-
     final l = Listing(
       id: newId(),
-      preset: _preset,
-      customPlatformName: (customName == null || customName.isEmpty) ? null : customName,
+      platform: _platform ?? (_platforms.isNotEmpty ? _platforms.first : 'Other'),
       url: _urlCtrl.text.trim(),
-      isLive: _isLive,
-      listedPriceCents: listedCents,
+      isLive: true,
+      listedPriceCents: parseMoneyToCents(_priceCtrl.text),
       createdAt: DateTime.now(),
     );
-
     Navigator.of(context).pop(l);
   }
 
@@ -5080,35 +5528,36 @@ class _AddListingDialogState extends State<AddListingDialog> {
             children: [
               TextFormField(
                 controller: _urlCtrl,
-                decoration: const InputDecoration(labelText: 'Listing URL', hintText: 'Paste eBay/Facebook/Gumtree link'),
+                decoration: const InputDecoration(
+                  labelText: 'Listing URL',
+                  hintText: 'Paste your listing link here',
+                ),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                 onChanged: (_) => _applyDetection(),
+                keyboardType: TextInputType.url,
+                autocorrect: false,
               ),
               const SizedBox(height: 10),
-              DropdownButtonFormField<ListingPlatformPreset>(
-                initialValue: _preset,
+              DropdownButtonFormField<String>(
+                initialValue: _platforms.contains(_platform) ? _platform : null,
                 decoration: const InputDecoration(labelText: 'Platform'),
-                items: ListingPlatformPreset.values.map((p) => DropdownMenuItem(value: p, child: Text(p.label))).toList(),
-                onChanged: (v) => setState(() => _preset = v ?? ListingPlatformPreset.custom),
+                hint: const Text('Select platform'),
+                items: _platforms.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                onChanged: (v) => setState(() => _platform = v),
               ),
-              const SizedBox(height: 10),
-              if (_preset == ListingPlatformPreset.custom)
-                TextFormField(
-                  controller: _customCtrl,
-                  decoration: const InputDecoration(labelText: 'Custom platform name', hintText: 'Craigslist / Local site'),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Manage platforms in Settings → Listing Platforms',
+                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3)),
                 ),
+              ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: _priceCtrl,
                 decoration: const InputDecoration(labelText: 'Listed price (optional)', prefixText: '\$'),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              ),
-              const SizedBox(height: 10),
-              SwitchListTile(
-                value: _isLive,
-                onChanged: (v) => setState(() => _isLive = v),
-                title: const Text('Listing is live'),
-                subtitle: const Text('Turn off when the listing ends or is taken down.'),
               ),
             ],
           ),
@@ -5133,9 +5582,9 @@ class EditListingDialog extends StatefulWidget {
 class _EditListingDialogState extends State<EditListingDialog> {
   final _formKey = GlobalKey<FormState>();
   late Listing _l;
+  List<String> _platforms = List.from(kDefaultPlatforms);
 
   late final TextEditingController _urlCtrl;
-  late final TextEditingController _customCtrl;
   late final TextEditingController _priceCtrl;
 
   @override
@@ -5143,37 +5592,25 @@ class _EditListingDialogState extends State<EditListingDialog> {
     super.initState();
     _l = Listing.fromJson(widget.listing.toJson());
     _urlCtrl = TextEditingController(text: _l.url);
-    _customCtrl = TextEditingController(text: _l.customPlatformName ?? '');
     _priceCtrl = TextEditingController(
       text: _l.listedPriceCents == null ? '' : (_l.listedPriceCents! / 100).toStringAsFixed(2),
     );
+    PlatformStorage.load().then((p) {
+      if (mounted) setState(() => _platforms = p);
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PlatformStorage.load failed: $e'); });
   }
 
   @override
   void dispose() {
     _urlCtrl.dispose();
-    _customCtrl.dispose();
     _priceCtrl.dispose();
     super.dispose();
   }
 
-  void _applyDetection() {
-    final det = detectPlatformFromUrl(_urlCtrl.text);
-    setState(() {
-      _l.preset = det.preset;
-      if (det.preset == ListingPlatformPreset.custom && det.suggestedCustomName != null) {
-        _customCtrl.text = det.suggestedCustomName!;
-      }
-    });
-  }
-
   void _save() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-
     _l.url = _urlCtrl.text.trim();
-    _l.customPlatformName = _l.preset == ListingPlatformPreset.custom ? _customCtrl.text.trim() : null;
     _l.listedPriceCents = parseMoneyToCents(_priceCtrl.text);
-
     Navigator.of(context).pop(_l);
   }
 
@@ -5192,32 +5629,30 @@ class _EditListingDialogState extends State<EditListingDialog> {
                 controller: _urlCtrl,
                 decoration: const InputDecoration(labelText: 'Listing URL'),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                onChanged: (_) => _applyDetection(),
+                keyboardType: TextInputType.url,
+                autocorrect: false,
               ),
               const SizedBox(height: 10),
-              DropdownButtonFormField<ListingPlatformPreset>(
-                initialValue: _l.preset,
+              DropdownButtonFormField<String>(
+                initialValue: _platforms.contains(_l.platform) ? _l.platform : null,
                 decoration: const InputDecoration(labelText: 'Platform'),
-                items: ListingPlatformPreset.values.map((p) => DropdownMenuItem(value: p, child: Text(p.label))).toList(),
-                onChanged: (v) => setState(() => _l.preset = v ?? ListingPlatformPreset.custom),
+                hint: const Text('Select platform'),
+                items: _platforms.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                onChanged: (v) => setState(() => _l.platform = v ?? _l.platform),
               ),
-              const SizedBox(height: 10),
-              if (_l.preset == ListingPlatformPreset.custom)
-                TextFormField(
-                  controller: _customCtrl,
-                  decoration: const InputDecoration(labelText: 'Custom platform name'),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Manage platforms in Settings → Listing Platforms',
+                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3)),
                 ),
+              ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: _priceCtrl,
                 decoration: const InputDecoration(labelText: 'Listed price (optional)', prefixText: '\$'),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              ),
-              const SizedBox(height: 10),
-              SwitchListTile(
-                value: _l.isLive,
-                onChanged: (v) => setState(() => _l.isLive = v),
-                title: const Text('Listing is live'),
               ),
             ],
           ),
@@ -5580,6 +6015,7 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
 
   void _addGroup() {
     final ctrl = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -5600,7 +6036,7 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
               // Check duplicate group name (case-insensitive)
               final existing = _groupList.map((e) => e.key.toLowerCase()).toSet();
               if (existing.contains(name.toLowerCase())) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('Group already exists')),
                 );
                 Navigator.pop(ctx);
@@ -5616,11 +6052,12 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
           ),
         ],
       ),
-    );
+    ).then((_) => ctrl.dispose());
   }
 
   void _renameGroup(int index) {
     final ctrl = TextEditingController(text: _groupList[index].key);
+    final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -5645,7 +6082,7 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
                   .map((e) => e.value.key.toLowerCase())
                   .toSet();
               if (existing.contains(name.toLowerCase())) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('Group already exists')),
                 );
                 Navigator.pop(ctx);
@@ -5661,7 +6098,7 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
           ),
         ],
       ),
-    );
+    ).then((_) => ctrl.dispose());
   }
 
   Future<void> _deleteGroup(int index) async {
@@ -5713,6 +6150,7 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
 
   void _addItem(int groupIndex) {
     final ctrl = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -5733,7 +6171,7 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
               final items = _groupList[groupIndex].value;
               final normalised = _normalizePartName(name);
               if (items.any((i) => _normalizePartName(i) == normalised)) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('Already exists in this group')),
                 );
                 Navigator.pop(ctx);
@@ -5749,11 +6187,12 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
           ),
         ],
       ),
-    );
+    ).then((_) => ctrl.dispose());
   }
 
   void _renameItem(int groupIndex, int itemIndex) {
     final ctrl = TextEditingController(text: _groupList[groupIndex].value[itemIndex]);
+    final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -5779,7 +6218,7 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
                   .map((e) => _normalizePartName(e.value))
                   .toSet();
               if (others.contains(normalised)) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('Already exists in this group')),
                 );
                 Navigator.pop(ctx);
@@ -5795,7 +6234,7 @@ class _PresetEditorScreenState extends State<PresetEditorScreen> {
           ),
         ],
       ),
-    );
+    ).then((_) => ctrl.dispose());
   }
 
   void _deleteItem(int groupIndex, int itemIndex) {
@@ -6333,21 +6772,42 @@ class PartsSearchTab extends StatefulWidget {
 
 class _PartsSearchTabState extends State<PartsSearchTab> {
   final _qCtrl = TextEditingController();
+  final _grainPainter = LeatherGrainPainter();
   PartState? _stateFilter;
+  List<_PartHit> _hits = [];
+  List<_PartGroup> _groups = [];
+  Timer? _searchDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _qCtrl.addListener(_onQueryChanged);
+  }
+
+  @override
+  void didUpdateWidget(PartsSearchTab old) {
+    super.didUpdateWidget(old);
+    // Re-run search immediately when the vehicle list changes (e.g. a part edited)
+    if (old.vehicles != widget.vehicles) _recompute();
+  }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _qCtrl.removeListener(_onQueryChanged);
     _qCtrl.dispose();
     super.dispose();
   }
 
+  void _onQueryChanged() {
+    // Debounce: wait 150 ms after the last keystroke before computing results.
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 150), _recompute);
+  }
 
-  @override
-  Widget build(BuildContext context) {
+  void _recompute() {
     final q = _qCtrl.text.trim().toLowerCase();
-
-    // ── 1. Collect matching hits ─────────────────────────────────────────
-    final hits = <_PartHit>[];
+    final newHits = <_PartHit>[];
     for (final v in widget.vehicles) {
       for (final p in v.parts) {
         if (_stateFilter != null && p.state != _stateFilter) continue;
@@ -6367,18 +6827,16 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
           v.color,
         ].join(' ').toLowerCase();
 
-        if (hay.contains(q)) hits.add(_PartHit(vehicle: v, part: p));
+        if (hay.contains(q)) newHits.add(_PartHit(vehicle: v, part: p));
       }
     }
 
-    // ── 2. Group by partNumber ───────────────────────────────────────────
     final groupMap = <String, List<_PartHit>>{};
-    for (final h in hits) {
+    for (final h in newHits) {
       final key = (h.part.partNumber ?? '').trim();
       groupMap.putIfAbsent(key, () => []).add(h);
     }
-    // Sort: most qty first, then by partNumber (empty last)
-    final groups = groupMap.entries
+    final newGroups = groupMap.entries
         .map((e) => _PartGroup(partNumber: e.key, hits: e.value))
         .toList()
       ..sort((a, b) {
@@ -6389,11 +6847,25 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
         return a.partNumber.compareTo(b.partNumber);
       });
 
+    if (mounted) setState(() { _hits = newHits; _groups = newGroups; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _qCtrl.text.trim();
+    final hits   = _hits;
+    final groups = _groups;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Search Parts')),
-      body: ListView(
-        padding: const EdgeInsets.all(kPad),
+      body: Stack(
         children: [
+          SizedBox.expand(
+            child: CustomPaint(painter: _grainPainter),
+          ),
+          ListView(
+            padding: const EdgeInsets.all(kPad),
+            children: [
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -6410,7 +6882,7 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
                     hintText: 'e.g. tailgate, WL-A3K7R2, shelf A3, PN123, qty:2, ranger...',
                     prefixIcon: Icon(Icons.search),
                   ),
-                  onChanged: (_) => setState(() {}),
+                  // Listener on _qCtrl handles debounced search — no onChanged needed
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<PartState?>(
@@ -6420,7 +6892,7 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
                     const DropdownMenuItem(value: null, child: Text('All')),
                     ...PartState.values.map((s) => DropdownMenuItem(value: s, child: Text(s.label))),
                   ],
-                  onChanged: (v) => setState(() => _stateFilter = v),
+                  onChanged: (v) { setState(() => _stateFilter = v); _recompute(); },
                 ),
               ],
             ),
@@ -6581,6 +7053,8 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
               );
             }),
           ],
+            ],
+          ),
         ],
       ),
     );
@@ -6596,7 +7070,7 @@ class _PartHit {
 /// ----------------------------
 /// Stats Tab
 /// ----------------------------
-class StatsTab extends StatelessWidget {
+class StatsTab extends StatefulWidget {
   final bool loading;
   final List<Vehicle> vehicles;
 
@@ -6622,7 +7096,7 @@ class StatsTab extends StatelessWidget {
     final abs = cents.abs();
     final dollars = abs ~/ 100;
     final rem = abs % 100;
-    return '$sign\$${_withCommas(dollars)}.${rem.toString().padLeft(2, '0')}';
+    return '$sign\$${StatsTab._withCommas(dollars)}.${rem.toString().padLeft(2, '0')}';
   }
 
   static Color _profitColor(int cents) {
@@ -6638,16 +7112,6 @@ class StatsTab extends StatelessWidget {
     return Colors.green;
   }
 
-  Widget _chip(String text, IconData icon, Color color) {
-    return Chip(
-      avatar: Icon(icon, size: 18, color: Colors.white),
-      label: Text(text, style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white)),
-      backgroundColor: color,
-      side: BorderSide.none,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    );
-  }
-
   static String _vehicleTitle(Vehicle v) {
     final make = v.make.trim();
     final model = v.model.trim();
@@ -6658,31 +7122,51 @@ class StatsTab extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-       if (loading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Stats')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+  State<StatsTab> createState() => _StatsTabState();
+}
+
+class _StatsTabState extends State<StatsTab> {
+  final _grainPainter = LeatherGrainPainter();
+
+  int _totalPurchase = 0;
+  int _totalRevenue = 0;
+  int _totalParts = 0;
+  int _totalInStock = 0;
+  int _totalListedLive = 0;
+  int _totalNotListed = 0;
+  int _totalQty = 0;
+  Map<String, int> _liveListingsByPlatform = {};
+  Map<String, int> _totalLinksByPlatform = {};
+  List<String> _platforms = [];
+  List<_StatPartRow> _oldestTop = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _computeStats();
+  }
+
+  @override
+  void didUpdateWidget(StatsTab old) {
+    super.didUpdateWidget(old);
+    if (old.vehicles != widget.vehicles || old.loading != widget.loading) {
+      _computeStats();
     }
+  }
 
-
+  void _computeStats() {
     int totalPurchase = 0;
     int totalRevenue = 0;
-
     int totalParts = 0;
     int totalInStock = 0;
     int totalListedLive = 0;
     int totalNotListed = 0;
-
     int totalQty = 0;
-
     final Map<String, int> liveListingsByPlatform = {};
     final Map<String, int> totalLinksByPlatform = {};
-
     final List<_StatPartRow> oldestNotListed = [];
 
-    for (final v in vehicles) {
+    for (final v in widget.vehicles) {
       totalPurchase += (v.purchasePriceCents ?? 0);
       totalRevenue += v.soldRevenueCents;
 
@@ -6712,7 +7196,7 @@ class StatsTab extends StatelessWidget {
           final pn = (p.partNumber ?? '').trim();
           oldestNotListed.add(
             _StatPartRow(
-              vehicleTitle: _vehicleTitle(v),
+              vehicleTitle: StatsTab._vehicleTitle(v),
               partName: p.name,
               days: p.daysInStock(),
               partNumber: pn.isEmpty ? null : pn,
@@ -6723,8 +7207,6 @@ class StatsTab extends StatelessWidget {
       }
     }
 
-    final totalPL = totalRevenue - totalPurchase;
-
     final platforms = <String>{
       ...totalLinksByPlatform.keys,
       ...liveListingsByPlatform.keys,
@@ -6732,112 +7214,628 @@ class StatsTab extends StatelessWidget {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     oldestNotListed.sort((a, b) => b.days.compareTo(a.days));
-    final oldestTop = oldestNotListed.take(10).toList();
+
+    _totalPurchase = totalPurchase;
+    _totalRevenue = totalRevenue;
+    _totalParts = totalParts;
+    _totalInStock = totalInStock;
+    _totalListedLive = totalListedLive;
+    _totalNotListed = totalNotListed;
+    _totalQty = totalQty;
+    _liveListingsByPlatform = liveListingsByPlatform;
+    _totalLinksByPlatform = totalLinksByPlatform;
+    _platforms = platforms;
+    _oldestTop = oldestNotListed.take(10).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.loading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Stats')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final totalPL = _totalRevenue - _totalPurchase;
+
+    // ── Local helpers ───────────────────────────────────────────────────────
+    Widget statBox(String value, String label, {Color? valueColor}) {
+      final color = valueColor ?? Colors.white;
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: Colors.white.withValues(alpha: 0.05),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+          ),
+          child: Column(
+            children: [
+              Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: color)),
+              const SizedBox(height: 3),
+              Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
+            ],
+          ),
+        ),
+      );
+    }
+
+    const gap = SizedBox(width: 8);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Stats')),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
+      body: Stack(
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Overview', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                Text('Calculated from your saved vehicles and parts.', style: Theme.of(context).textTheme.bodySmall),
+          SizedBox.expand(
+            child: CustomPaint(painter: _grainPainter),
+          ),
+          ListView(
+            padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 32),
+            children: [
+
+          // ── Financial ─────────────────────────────────────────────────
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Financials', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
                 const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _chip('Vehicles: ${vehicles.length}', Icons.directions_car, Colors.blueGrey),
-                    _chip('Parts: $totalParts', Icons.inventory_2, Colors.blueGrey),
-                    if (totalQty != totalParts) _chip('Total qty: $totalQty', Icons.numbers, Colors.indigo),
-                    _chip('In stock: $totalInStock', Icons.warehouse, Colors.orange),
-                    _chip('Listed: $totalListedLive', Icons.link, Colors.blue),
-                    _chip('Not listed: $totalNotListed', Icons.warning_amber, totalNotListed > 0 ? Colors.red : Colors.green),
-                    _chip('Revenue: ${_fmtMoney(totalRevenue)}', Icons.payments, Colors.blue),
-                    _chip('Purchase: ${_fmtMoney(totalPurchase)}', Icons.shopping_cart, Colors.orange),
-                    _chip('P/L: ${_fmtMoney(totalPL)}', Icons.trending_up, _profitColor(totalPL)),
-                  ],
-                ),
-              ]),
+                Row(children: [
+                  statBox(StatsTab._fmtMoney(_totalRevenue), 'Revenue'),
+                  gap,
+                  statBox(StatsTab._fmtMoney(_totalPurchase), 'Purchase', valueColor: const Color(0xFFE8700A)),
+                  gap,
+                  statBox(StatsTab._fmtMoney(totalPL), 'P / L', valueColor: StatsTab._profitColor(totalPL)),
+                ]),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Platforms', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                Text('Counts are based on your listing links (live + total).', style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 10),
+
+          // ── Inventory ─────────────────────────────────────────────────
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Inventory', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
                 const SizedBox(height: 12),
-                if (platforms.isEmpty)
-                  const Text('No listing links yet. Add links to parts to see platform stats.')
+                Row(children: [
+                  statBox('${widget.vehicles.length}', 'Vehicles'),
+                  gap,
+                  statBox('$_totalParts', 'Parts'),
+                  gap,
+                  statBox('$_totalInStock', 'In Stock', valueColor: const Color(0xFFE8700A)),
+                ]),
+                const SizedBox(height: 8),
+                Row(children: [
+                  statBox('$_totalListedLive', 'Listed', valueColor: Colors.green),
+                  gap,
+                  statBox('$_totalNotListed', 'Unlisted',
+                    valueColor: _totalNotListed > 0 ? Colors.orange : Colors.white),
+                  gap,
+                  if (_totalQty != _totalParts)
+                    statBox('$_totalQty', 'Total Qty')
+                  else
+                    const Expanded(child: SizedBox()),
+                ]),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // ── Platforms ─────────────────────────────────────────────────
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Platforms', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
+                const SizedBox(height: 12),
+                if (_platforms.isEmpty)
+                  Text(
+                    'No listing links yet.',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 13),
+                  )
                 else
-                  ...platforms.map((name) {
-                    final live = liveListingsByPlatform[name] ?? 0;
-                    final total = totalLinksByPlatform[name] ?? 0;
+                  ..._platforms.map((name) {
+                    final live = _liveListingsByPlatform[name] ?? 0;
+                    final total = _totalLinksByPlatform[name] ?? 0;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Row(
                         children: [
-                          Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w900))),
-                          _chip('Live: $live', Icons.circle, Colors.green),
-                          const SizedBox(width: 8),
-                          _chip('Total: $total', Icons.link, Colors.blueGrey),
+                          Expanded(
+                            child: Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                          ),
+                          Text(
+                            '$live live',
+                            style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                          Text(
+                            '  /  $total total',
+                            style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 13),
+                          ),
                         ],
                       ),
                     );
                   }),
-              ]),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Oldest not listed', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                Text('In stock parts with no live listing links.', style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 10),
+
+          // ── Oldest unlisted ───────────────────────────────────────────
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Oldest Unlisted', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
+                const SizedBox(height: 4),
+                Text(
+                  'In-stock parts with no live listing.',
+                  style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+                ),
                 const SizedBox(height: 12),
-                if (oldestTop.isEmpty)
-                  const Text('Nice - nothing is sitting unlisted.')
+                if (_oldestTop.isEmpty)
+                  Text(
+                    'Nothing sitting unlisted — great.',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 13),
+                  )
                 else
-                  ...oldestTop.map((r) {
+                  ..._oldestTop.map((r) {
+                    final ageColor = StatsTab._ageColor(r.days);
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(r.partName, style: const TextStyle(fontWeight: FontWeight.w900)),
-                            const SizedBox(height: 6),
-                            Text(r.vehicleTitle, style: Theme.of(context).textTheme.bodySmall),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _chip('Age: ${r.days}d', Icons.timer, _ageColor(r.days)),
-                                if (r.qty > 1) _chip('Qty: ${r.qty}', Icons.numbers, Colors.indigo),
-                                if ((r.partNumber ?? '').trim().isNotEmpty)
-                                  _chip('PN: ${r.partNumber}', Icons.confirmation_number, Colors.blueGrey),
+                                Text(r.partName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  r.vehicleTitle,
+                                  style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if ((r.partNumber ?? '').trim().isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'PN: ${r.partNumber}',
+                                    style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3), fontFamily: 'monospace'),
+                                  ),
+                                ],
                               ],
                             ),
-                          ]),
-                        ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('${r.days}d', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: ageColor)),
+                              if (r.qty > 1)
+                                Text('qty ${r.qty}', style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.35))),
+                            ],
+                          ),
+                        ],
                       ),
                     );
                   }),
-              ]),
+              ],
             ),
+          ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manage Part Categories Screen
+// ─────────────────────────────────────────────────────────────────────────────
+class ManageCategoriesScreen extends StatefulWidget {
+  const ManageCategoriesScreen({super.key});
+
+  @override
+  State<ManageCategoriesScreen> createState() => _ManageCategoriesScreenState();
+}
+
+class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
+  List<String> _categories = [];
+  final _addCtrl = TextEditingController();
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    PartCategoryStorage.load().then((cats) {
+      if (mounted) setState(() { _categories = cats; _loading = false; });
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
+  }
+
+  @override
+  void dispose() {
+    _addCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    await PartCategoryStorage.save(_categories);
+  }
+
+  void _addCategory() {
+    final name = _addCtrl.text.trim();
+    if (name.isEmpty || name.length > 50 || _categories.contains(name)) return;
+    setState(() => _categories.add(name));
+    _addCtrl.clear();
+    _save();
+  }
+
+  void _delete(int index) {
+    setState(() => _categories.removeAt(index));
+    _save();
+  }
+
+  Future<void> _renameCategory(int index, String current) async {
+    final ctrl = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Category'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Category name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE8700A)),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (result == null || result.isEmpty || result == current) return;
+    setState(() => _categories[index] = result);
+    _save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Part Categories'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await PartCategoryStorage.save(List.from(kPartCategories));
+              final cats = await PartCategoryStorage.load();
+              if (mounted) setState(() => _categories = cats);
+            },
+            child: const Text('Reset', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                // ── Add new category ───────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _addCtrl,
+                          decoration: const InputDecoration(
+                            hintText: 'New category name…',
+                            prefixIcon: Icon(Icons.add),
+                            isDense: true,
+                          ),
+                          textCapitalization: TextCapitalization.words,
+                          onSubmitted: (_) => _addCategory(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed: _addCategory,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFE8700A),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        ),
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: kPad),
+                  child: Text(
+                    'Drag ≡ to reorder  ·  tap ✎ to rename  ·  tap 🗑 to delete',
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // ── Reorderable list ───────────────────────────────────
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, 32),
+                    buildDefaultDragHandles: false,
+                    itemCount: _categories.length,
+                    onReorder: (oldIndex, newIndex) {
+                      setState(() {
+                        if (newIndex > oldIndex) newIndex--;
+                        final item = _categories.removeAt(oldIndex);
+                        _categories.insert(newIndex, item);
+                      });
+                      _save();
+                    },
+                    itemBuilder: (context, index) {
+                      final cat = _categories[index];
+                      return Container(
+                        key: ValueKey(cat),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withValues(alpha: 0.05),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                        ),
+                        child: Row(
+                          children: [
+                            // Drag handle
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                                child: Icon(Icons.drag_handle, color: Colors.white38, size: 20),
+                              ),
+                            ),
+                            // Orange accent
+                            Container(
+                              width: 3,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8700A),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Name
+                            Expanded(
+                              child: Text(cat, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                            ),
+                            // Edit
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              color: Colors.white38,
+                              tooltip: 'Rename',
+                              onPressed: () => _renameCategory(index, cat),
+                            ),
+                            // Delete
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              color: Colors.red.withValues(alpha: 0.6),
+                              tooltip: 'Delete',
+                              onPressed: () => _delete(index),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manage Listing Platforms Screen
+// ─────────────────────────────────────────────────────────────────────────────
+class ManagePlatformsScreen extends StatefulWidget {
+  const ManagePlatformsScreen({super.key});
+
+  @override
+  State<ManagePlatformsScreen> createState() => _ManagePlatformsScreenState();
+}
+
+class _ManagePlatformsScreenState extends State<ManagePlatformsScreen> {
+  List<String> _platforms = [];
+  final _addCtrl = TextEditingController();
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    PlatformStorage.load().then((p) {
+      if (mounted) setState(() { _platforms = p; _loading = false; });
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PlatformStorage.load failed: $e'); });
+  }
+
+  @override
+  void dispose() {
+    _addCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() => PlatformStorage.save(_platforms);
+
+  void _add() {
+    final name = _addCtrl.text.trim();
+    if (name.isEmpty || _platforms.contains(name)) return;
+    setState(() => _platforms.add(name));
+    _addCtrl.clear();
+    _save();
+  }
+
+  void _delete(int index) {
+    setState(() => _platforms.removeAt(index));
+    _save();
+  }
+
+  Future<void> _rename(int index, String current) async {
+    final ctrl = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Platform'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Platform name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE8700A)),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (result == null || result.isEmpty || result == current) return;
+    setState(() => _platforms[index] = result);
+    _save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Listing Platforms'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await PlatformStorage.save(List.from(kDefaultPlatforms));
+              final p = await PlatformStorage.load();
+              if (mounted) setState(() => _platforms = p);
+            },
+            child: const Text('Reset', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _addCtrl,
+                          decoration: const InputDecoration(
+                            hintText: 'New platform name…',
+                            prefixIcon: Icon(Icons.add),
+                            isDense: true,
+                          ),
+                          textCapitalization: TextCapitalization.words,
+                          onSubmitted: (_) => _add(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed: _add,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFE8700A),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        ),
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: kPad),
+                  child: Text(
+                    'Drag to reorder  ·  tap ✎ to rename  ·  tap 🗑 to delete',
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, 32),
+                    buildDefaultDragHandles: false,
+                    itemCount: _platforms.length,
+                    onReorder: (oldIndex, newIndex) {
+                      setState(() {
+                        if (newIndex > oldIndex) newIndex--;
+                        final item = _platforms.removeAt(oldIndex);
+                        _platforms.insert(newIndex, item);
+                      });
+                      _save();
+                    },
+                    itemBuilder: (context, index) {
+                      final p = _platforms[index];
+                      return Container(
+                        key: ValueKey(p),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withValues(alpha: 0.05),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                        ),
+                        child: Row(
+                          children: [
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                                child: Icon(Icons.drag_handle, color: Colors.white38, size: 20),
+                              ),
+                            ),
+                            Container(
+                              width: 3,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8700A),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(p, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              color: Colors.white38,
+                              tooltip: 'Rename',
+                              onPressed: () => _rename(index, p),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              color: Colors.red.withValues(alpha: 0.6),
+                              tooltip: 'Delete',
+                              onPressed: () => _delete(index),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -6863,11 +7861,13 @@ class _StatPartRow {
 class SettingsTab extends StatefulWidget {
   final List<Vehicle> vehicles;
   final Future<void> Function(List<Vehicle> restored) onRestoreVehicles;
+  final Future<void> Function() onWipeAll;
 
   const SettingsTab({
     super.key,
     required this.vehicles,
     required this.onRestoreVehicles,
+    required this.onWipeAll,
   });
 
   @override
@@ -6876,383 +7876,29 @@ class SettingsTab extends StatefulWidget {
 
 class _SettingsTabState extends State<SettingsTab> {
   String _version = '';
+  final _grainPainter = LeatherGrainPainter();
 
   @override
   void initState() {
     super.initState();
     PackageInfo.fromPlatform().then((info) {
       if (mounted) setState(() => _version = info.version);
-    });
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PackageInfo.fromPlatform failed: $e'); });
   }
-
-  // ── Backup: write JSON to temp file and share ──────────────────────
-  Future<void> _backup(BuildContext context) async {
-    try {
-      final json = vehiclesToPrettyJson(widget.vehicles);
-      final now = DateTime.now();
-      final stamp =
-          '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
-          '_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
-      final filename = 'wrecklog_backup_$stamp.json';
-
-      if (kIsWeb) {
-        // Web: trigger browser download directly — no dart:io needed
-        downloadTextFileWeb(filename: filename, content: json);
-        return;
-      }
-
-      // Native (Android/iOS/desktop): write temp file then share
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/$filename');
-      await file.writeAsString(json);
-
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/json')],
-        subject: 'WreckLog Backup $stamp',
-      );
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Backup failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  // ── Restore: pick JSON file and load ──────────────────────────────
-  Future<void> _restore(BuildContext context) async {
-    // Confirm first
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Restore from backup'),
-            content: const Text(
-              'This will REPLACE all your current data with the backup file.\n\n'
-              'Make sure you have a backup of your current data first.\n\n'
-              'Are you sure?',
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel')),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Yes, restore'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-
-    if (!ok) return;
-    if (!context.mounted) return;
-
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-        withData: true,
-      );
-
-      if (result == null || result.files.isEmpty) return;
-
-      final bytes = result.files.first.bytes;
-      if (bytes == null) {
-        throw Exception('Could not read file');
-      }
-
-      final jsonStr = String.fromCharCodes(bytes);
-      final List<dynamic> raw = jsonDecode(jsonStr) as List<dynamic>;
-      final restored =
-          raw.map((e) => Vehicle.fromJson(e as Map<String, dynamic>)).toList();
-
-      await widget.onRestoreVehicles(restored);
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Restored ${restored.length} vehicle${restored.length == 1 ? '' : 's'} successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Restore failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  // ── Global: delete photos of sold parts across all vehicles ──────
-  Future<void> _deleteAllSoldPhotos(BuildContext context) async {
-    final allSoldParts = widget.vehicles
-        .expand((v) => v.parts)
-        .where((p) => p.state == PartState.sold)
-        .toList();
-
-    if (allSoldParts.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No sold parts found across any vehicle.')));
-      }
-      return;
-    }
-
-    // Count photos first
-    int photoCount = 0;
-    for (final part in allSoldParts) {
-      final photos = await PhotoStorage.forOwner('part', part.id);
-      photoCount += photos.length;
-    }
-
-    if (photoCount == 0) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sold parts have no photos to delete.')));
-      }
-      return;
-    }
-
-    if (!context.mounted) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete all sold part photos?'),
-        content: Text(
-          'This will permanently delete $photoCount photo${photoCount == 1 ? '' : 's'} '
-          'from ${allSoldParts.length} sold part${allSoldParts.length == 1 ? '' : 's'} '
-          'across all vehicles.\n\nThis cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete all'),
-          ),
-        ],
-      ),
-    ) ?? false;
-
-    if (!ok || !context.mounted) return;
-
-    for (final part in allSoldParts) {
-      await PhotoStorage.deleteAllForOwner('part', part.id);
-    }
-
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Deleted $photoCount photo${photoCount == 1 ? '' : 's'} from sold parts across all vehicles.'),
-          backgroundColor: Colors.green,
-        ));
-    }
-  }
-
-  // ── Photo backup: zip all photo files and share ──────────────────
-  Future<void> _backupPhotos(BuildContext context) async {
-    try {
-      // Count photos first so we can warn if there are none
-      final allPhotos = await PhotoStorage.loadAll();
-      if (allPhotos.isEmpty) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No photos to back up.')));
-        }
-        return;
-      }
-
-      // Show progress indicator
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Building photo backup…'),
-            duration: Duration(seconds: 60),
-          ));
-      }
-
-      final encoder = ZipFileEncoder();
-      final now = DateTime.now();
-      final stamp =
-          '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
-          '_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
-      final dir = await getTemporaryDirectory();
-      final zipPath = '${dir.path}/wrecklog_photos_$stamp.zip';
-
-      encoder.create(zipPath);
-
-      int count = 0;
-      for (final photo in allPhotos) {
-        final f = File(photo.pathOrData);
-        if (await f.exists()) {
-          // Preserve folder structure: vehicles/<ownerId>/<id>.jpg
-          final archivePath = '${photo.ownerType}s/${photo.ownerId}/${photo.id}.jpg';
-          final bytes = await f.readAsBytes();
-          encoder.addArchiveFile(ArchiveFile(archivePath, bytes.length, bytes));
-          count++;
-        }
-      }
-      encoder.close();
-
-      // Dismiss progress snackbar
-      if (context.mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-      if (count == 0) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No photo files found to back up.')));
-        }
-        return;
-      }
-
-      await Share.shareXFiles(
-        [XFile(zipPath, mimeType: 'application/zip')],
-        subject: 'WreckLog Photo Backup $stamp',
-      );
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Photo backup failed: $e'),
-            backgroundColor: Colors.red,
-          ));
-      }
-    }
-  }
-
-  // ── Photo restore: pick zip, extract photos, rebuild metadata ─────
-  Future<void> _restorePhotos(BuildContext context) async {
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Restore photo backup?'),
-            content: const Text(
-              'This will re-import photos from a WreckLog photo backup zip.\n\n'
-              'Existing photos in the app will NOT be deleted — '
-              'photos from the backup will be added alongside them.\n\n'
-              'Make sure you have restored your data backup first so '
-              'vehicle and part records exist.',
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel')),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Restore photos'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-
-    if (!ok || !context.mounted) return;
-
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['zip'],
-        withData: true,
-      );
-
-      if (result == null || result.files.isEmpty) return;
-      final bytes = result.files.first.bytes;
-      if (bytes == null) throw Exception('Could not read file');
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Restoring photos…'),
-            duration: Duration(seconds: 60),
-          ));
-      }
-
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final docsDir = await getApplicationDocumentsDirectory();
-      int count = 0;
-
-      for (final file in archive) {
-        if (!file.isFile) continue;
-        // Expected path: vehicles/<ownerId>/<id>.jpg or parts/<ownerId>/<id>.jpg
-        final parts = file.name.split('/');
-        if (parts.length != 3) continue;
-        final ownerFolder = parts[0]; // 'vehicles' or 'parts'
-        final ownerId     = parts[1];
-        final fileName    = parts[2];
-        if (!fileName.endsWith('.jpg')) continue;
-
-        // Derive ownerType from folder name
-        final ownerType = ownerFolder == 'vehicles' ? 'vehicle' : 'part';
-        final photoId   = fileName.replaceAll('.jpg', '');
-
-        // Write file to app documents directory
-        final destDir = Directory(
-          '${docsDir.path}/wrecklog/photos/$ownerFolder/$ownerId'
-        );
-        await destDir.create(recursive: true);
-        final destPath = '${destDir.path}/$fileName';
-        await File(destPath).writeAsBytes(file.content as List<int>);
-
-        // Add metadata record if not already present
-        final existing = await PhotoStorage.forOwner(ownerType, ownerId);
-        final alreadyExists = existing.any((p) => p.id == photoId);
-        if (!alreadyExists) {
-          await PhotoStorage.add(
-            ownerType:  ownerType,
-            ownerId:    ownerId,
-            sourcePath: destPath,
-          );
-        }
-        count++;
-      }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              count > 0
-                ? 'Restored $count photo${count == 1 ? '' : 's'} successfully!'
-                : 'No photos found in backup file.'),
-            backgroundColor: count > 0 ? Colors.green : null,
-          ));
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Photo restore failed: $e'),
-            backgroundColor: Colors.red,
-          ));
-      }
-    }
-  }
-
-  int get _totalParts => widget.vehicles.fold(0, (s, v) => s + v.parts.length);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
-        padding: const EdgeInsets.all(kPad),
+      body: Stack(
         children: [
-          // ── Pro / Monetisation ─────────────────────────────────────
+          SizedBox.expand(
+            child: CustomPaint(painter: _grainPainter),
+          ),
+          ListView(
+            padding: const EdgeInsets.all(kPad),
+            children: [
+              // ── Pro / Monetisation ─────────────────────────────────────
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -7352,187 +7998,88 @@ class _SettingsTabState extends State<SettingsTab> {
             ),
           ],
 
-          // ── Backup & Restore ───────────────────────────────────────
-
+          // ── Part Categories ────────────────────────────────────────
+          const SizedBox(height: kPad),
           AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.cloud_upload_outlined, color: Color(0xFFE8700A)),
-                    SizedBox(width: 10),
-                    Text(
-                      'Backup & Restore',
-                      style: TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.w800),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Your data is stored on this device only. '
-                  'Export a backup regularly so you never lose your inventory.',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13, height: 1.5),
-                ),
-                const SizedBox(height: 16),
-
-                // Data summary
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _DataPill(
-                          label: 'Vehicles',
-                          value: '${widget.vehicles.length}',
-                          icon: Icons.directions_car),
-                      _DataPill(
-                          label: 'Parts',
-                          value: '$_totalParts',
-                          icon: Icons.inventory_2),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Backup button
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () => _backup(context),
-                    icon: const Icon(Icons.upload),
-                    label: const Text('Export Backup'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFE8700A),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(kRadius),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ManageCategoriesScreen()),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.category_outlined, color: Color(0xFFE8700A)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Part Categories', style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('Add, remove and reorder categories', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
                     ),
                   ),
-                ),
+                  Icon(Icons.chevron_right, color: Colors.white24),
+                ],
+              ),
+            ),
+          ),
 
-                const SizedBox(height: 10),
-
-                // Restore button
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _restore(context),
-                    icon: const Icon(Icons.download),
-                    label: const Text('Restore from Backup'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+          // ── Listing Platforms ──────────────────────────────────────
+          const SizedBox(height: kPad),
+          AppCard(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(kRadius),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ManagePlatformsScreen()),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.link, color: Color(0xFFE8700A)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Listing Platforms', style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('Add, remove and reorder listing platforms', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
                     ),
                   ),
-                ),
+                  Icon(Icons.chevron_right, color: Colors.white24),
+                ],
+              ),
+            ),
+          ),
 
-                const SizedBox(height: 16),
-
-                // Photo storage cleanup
-                Row(children: [
-                  const Icon(Icons.delete_sweep_outlined, size: 15, color: Color(0xFFE8700A)),
-                  const SizedBox(width: 8),
-                  Text('Photo Storage',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white.withValues(alpha: 0.8))),
-                ]),
-                const SizedBox(height: 10),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _deleteAllSoldPhotos(context),
-                    icon: const Icon(Icons.delete_sweep_outlined),
-                    label: const Text('Delete photos of all sold parts'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                      side: const BorderSide(color: Colors.redAccent),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+          // ── Backup & Restore ───────────────────────────────────────
+          const SizedBox(height: kPad),
+          AppCard(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(kRadius),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => BackupRestorePage(
+                  vehicles: widget.vehicles,
+                  onRestoreVehicles: widget.onRestoreVehicles,
+                  onWipeAll: widget.onWipeAll,
+                )),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.cloud_upload_outlined, color: Color(0xFFE8700A)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Backup & Restore', style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('Export, restore and manage your data', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
                     ),
                   ),
-                ),
-
-                const SizedBox(height: 6),
-                const Row(children: [
-                  Icon(Icons.info_outline, size: 13, color: Colors.white24),
-                  SizedBox(width: 6),
-                  Expanded(child: Text(
-                    'Frees up storage by removing photos from sold parts across all vehicles. '
-                    'You can also do this per vehicle from the vehicle detail screen.',
-                    style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
-                  )),
-                ]),
-
-                const SizedBox(height: 16),
-
-                // Photo backup section
-                Row(children: [
-                  const Icon(Icons.photo_library_outlined, size: 15, color: Color(0xFFE8700A)),
-                  const SizedBox(width: 8),
-                  Text('Photo Backup',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white.withValues(alpha: 0.8))),
-                ]),
-                const SizedBox(height: 10),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () => _backupPhotos(context),
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('Export Photo Backup'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.white12,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _restorePhotos(context),
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: const Text('Restore Photo Backup'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                Row(
-                  children: [
-                    const Icon(Icons.info_outline, size: 14, color: Colors.white38),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Data backup saves vehicle and part records as a .json file.\n'
-                        'Photo backup saves all photos as a .zip file.\n'
-                        'To fully restore after reinstalling: restore data backup first, then restore photo backup.',
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.35),
-                            fontSize: 11,
-                            height: 1.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                  Icon(Icons.chevron_right, color: Colors.white24),
+                ],
+              ),
             ),
           ),
 
@@ -7560,6 +8107,776 @@ class _SettingsTabState extends State<SettingsTab> {
                 const _InfoRow(label: 'Build', value: 'Release 1'),
               ],
             ),
+          ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// BackupRestorePage
+// ═════════════════════════════════════════════════════════════════════════════
+class BackupRestorePage extends StatefulWidget {
+  final List<Vehicle> vehicles;
+  final Future<void> Function(List<Vehicle> restored) onRestoreVehicles;
+  final Future<void> Function() onWipeAll;
+
+  const BackupRestorePage({
+    super.key,
+    required this.vehicles,
+    required this.onRestoreVehicles,
+    required this.onWipeAll,
+  });
+
+  @override
+  State<BackupRestorePage> createState() => _BackupRestorePageState();
+}
+
+class _BackupRestorePageState extends State<BackupRestorePage> {
+  final _grainPainter = LeatherGrainPainter();
+
+  int get _totalParts => widget.vehicles.fold(0, (s, v) => s + v.parts.length);
+
+  // ── Export JSON ────────────────────────────────────────────────────
+  Future<void> _exportJson(BuildContext context) async {
+    final content = await vehiclesToPrettyJson(widget.vehicles);
+    downloadTextFileWeb(filename: 'wrecklog_export.json', content: content);
+  }
+
+  // ── Export CSV ─────────────────────────────────────────────────────
+  Future<void> _exportCsv(BuildContext context) async {
+    final content = vehiclesToCsv(widget.vehicles);
+    downloadTextFileWeb(filename: 'wrecklog_export.csv', content: content);
+  }
+
+  // ── Backup: write JSON to temp file and share ──────────────────────
+  Future<void> _backup(BuildContext context) async {
+    try {
+      final json = await vehiclesToPrettyJson(widget.vehicles);
+      final now = DateTime.now();
+      final stamp =
+          '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
+          '_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+      final filename = 'wrecklog_backup_$stamp.json';
+
+      if (kIsWeb) {
+        downloadTextFileWeb(filename: filename, content: json);
+        return;
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/$filename');
+      await file.writeAsString(json);
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        subject: 'WreckLog Backup $stamp',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Backup failed. Check storage permissions and try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Restore: pick JSON file and load ──────────────────────────────
+  Future<void> _restore(BuildContext context) async {
+    final vCount = widget.vehicles.length;
+    final pCount = widget.vehicles.fold<int>(0, (s, v) => s + v.parts.length);
+    final currentSummary = vCount == 0
+        ? 'You have no data yet.'
+        : 'You currently have $vCount vehicle${vCount == 1 ? '' : 's'} '
+          'and $pCount part${pCount == 1 ? '' : 's'}.';
+
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Restore from backup'),
+            content: Text(
+              '$currentSummary\n\n'
+              'Restoring will permanently delete all of it and replace it '
+              'with the backup file. This cannot be undone.\n\n'
+              'Continue?',
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Yes, restore'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!ok) return;
+    if (!context.mounted) return;
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final bytes = result.files.first.bytes;
+      if (bytes == null) throw Exception('Could not read file');
+
+      final jsonStr = const Utf8Decoder().convert(bytes);
+      final decoded = jsonDecode(jsonStr);
+
+      List<dynamic> rawList;
+      if (decoded is Map<String, dynamic> && decoded['wrecklog_backup'] == true) {
+        rawList = decoded['vehicles'] as List<dynamic>? ?? [];
+      } else if (decoded is List) {
+        rawList = decoded;
+      } else {
+        throw const FormatException('Unrecognised backup format');
+      }
+
+      final restored = <Vehicle>[];
+      int skipped = 0;
+      for (final e in rawList) {
+        try {
+          restored.add(Vehicle.fromJson(e as Map<String, dynamic>));
+        } catch (_) {
+          skipped++;
+        }
+      }
+
+      if (restored.isEmpty) {
+        throw const FormatException('Backup contains no valid vehicles — restore cancelled to protect your data.');
+      }
+
+      if (!context.mounted) return;
+      await widget.onRestoreVehicles(restored);
+
+      if (decoded is Map<String, dynamic>) {
+        final cats = decoded['part_categories'];
+        if (cats is List) await PartCategoryStorage.save(List<String>.from(cats));
+        final plats = decoded['listing_platforms'];
+        if (plats is List) await PlatformStorage.save(List<String>.from(plats));
+        final presets = decoded['preset_groups'];
+        if (presets is Map<String, dynamic>) {
+          for (final type in ItemType.values) {
+            final data = presets[type.name];
+            if (data is Map<String, dynamic>) {
+              await PresetGroupStorage.save(
+                type,
+                data.map((k, v) => MapEntry(k, List<String>.from(v as List))),
+              );
+            }
+          }
+        }
+      }
+
+      if (context.mounted) {
+        final msg = skipped == 0
+            ? 'Restored ${restored.length} vehicle${restored.length == 1 ? '' : 's'} successfully!'
+            : 'Restored ${restored.length} vehicle${restored.length == 1 ? '' : 's'} ($skipped skipped — corrupted).';
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Restore complete'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(msg),
+                const SizedBox(height: 12),
+                const Text(
+                  'Remember: photos are backed up separately. '
+                  'If you haven\'t restored your photo backup yet, '
+                  'use the Photo Backup section below to bring them back.',
+                  style: TextStyle(fontSize: 13, color: Colors.white70),
+                ),
+              ],
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Got it'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Restore failed. The file may be corrupted or in the wrong format.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Global: delete photos of sold parts across all vehicles ──────
+  Future<void> _deleteAllSoldPhotos(BuildContext context) async {
+    final allSoldParts = widget.vehicles
+        .expand((v) => v.parts)
+        .where((p) => p.state == PartState.sold)
+        .toList();
+
+    if (allSoldParts.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No sold parts found across any vehicle.')));
+      }
+      return;
+    }
+
+    int photoCount = 0;
+    for (final part in allSoldParts) {
+      final photos = await PhotoStorage.forOwner('part', part.id);
+      photoCount += photos.length;
+    }
+
+    if (photoCount == 0) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sold parts have no photos to delete.')));
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete all sold part photos?'),
+        content: Text(
+          'This will permanently delete $photoCount photo${photoCount == 1 ? '' : 's'} '
+          'from ${allSoldParts.length} sold part${allSoldParts.length == 1 ? '' : 's'} '
+          'across all vehicles.\n\nThis cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete all'),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (!ok || !context.mounted) return;
+
+    for (final part in allSoldParts) {
+      await PhotoStorage.deleteAllForOwner('part', part.id);
+    }
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Deleted $photoCount photo${photoCount == 1 ? '' : 's'} from sold parts across all vehicles.'),
+          backgroundColor: Colors.green,
+        ));
+    }
+  }
+
+  // ── Photo backup: zip all photo files and share ──────────────────
+  Future<void> _backupPhotos(BuildContext context) async {
+    try {
+      final allPhotos = await PhotoStorage.loadAll();
+      if (allPhotos.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No photos to back up.')));
+        }
+        return;
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Building photo backup…'),
+            duration: Duration(seconds: 60),
+          ));
+      }
+
+      final encoder = ZipFileEncoder();
+      final now = DateTime.now();
+      final stamp =
+          '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
+          '_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+      final dir = await getTemporaryDirectory();
+      final zipPath = '${dir.path}/wrecklog_photos_$stamp.zip';
+
+      encoder.create(zipPath);
+
+      int count = 0;
+      try {
+        for (final photo in allPhotos) {
+          try {
+            final f = File(photo.pathOrData);
+            if (await f.exists()) {
+              final archivePath = '${photo.ownerType}s/${photo.ownerId}/${photo.id}.jpg';
+              final bytes = await f.readAsBytes();
+              encoder.addArchiveFile(ArchiveFile(archivePath, bytes.length, bytes));
+              count++;
+            }
+          } catch (e) {
+            if (kDebugMode) debugPrint('Skipping photo ${photo.id}: $e');
+          }
+        }
+      } finally {
+        encoder.close();
+      }
+
+      if (context.mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      if (count == 0) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No photo files found to back up.')));
+        }
+        return;
+      }
+
+      await Share.shareXFiles(
+        [XFile(zipPath, mimeType: 'application/zip')],
+        subject: 'WreckLog Photo Backup $stamp',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo backup failed. Please try again.'),
+            backgroundColor: Colors.red,
+          ));
+      }
+    }
+  }
+
+  // ── Photo restore: pick zip, extract photos, rebuild metadata ─────
+  Future<void> _restorePhotos(BuildContext context) async {
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Restore photo backup?'),
+            content: const Text(
+              'This will re-import photos from a WreckLog photo backup zip.\n\n'
+              'Existing photos in the app will NOT be deleted — '
+              'photos from the backup will be added alongside them.\n\n'
+              'Make sure you have restored your data backup first so '
+              'vehicle and part records exist.',
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Restore photos'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!ok || !context.mounted) return;
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+      if (!context.mounted) return;
+      final bytes = result.files.first.bytes;
+      if (bytes == null) throw Exception('Could not read file');
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Restoring photos…'),
+            duration: Duration(seconds: 60),
+          ));
+      }
+
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final docsDir = await getApplicationDocumentsDirectory();
+      int count = 0;
+
+      final allExisting = await PhotoStorage.loadAll();
+      final existingIds = <String>{for (final p in allExisting) p.id};
+
+      for (final file in archive) {
+        if (!file.isFile) continue;
+        final parts = file.name.split('/');
+        if (parts.length != 3) continue;
+        final ownerFolder = parts[0];
+        final ownerId     = parts[1];
+        final fileName    = parts[2];
+        if (!fileName.endsWith('.jpg')) continue;
+
+        if (ownerId.contains('..') || ownerId.contains('/') ||
+            fileName.contains('..') || fileName.contains('/') ||
+            ownerFolder.contains('..')) { continue; }
+
+        try {
+          final ownerType = ownerFolder == 'vehicles' ? 'vehicle' : 'part';
+          final photoId   = fileName.replaceAll('.jpg', '');
+
+          final destDir = Directory(
+            '${docsDir.path}/wrecklog/photos/$ownerFolder/$ownerId'
+          );
+          await destDir.create(recursive: true);
+          final destPath = '${destDir.path}/$fileName';
+          await File(destPath).writeAsBytes(file.content as List<int>);
+
+          if (!existingIds.contains(photoId)) {
+            await PhotoStorage.add(
+              ownerType:  ownerType,
+              ownerId:    ownerId,
+              sourcePath: destPath,
+            );
+            existingIds.add(photoId);
+          }
+          count++;
+        } catch (e) {
+          if (kDebugMode) debugPrint('Failed to restore photo ${file.name}: $e');
+        }
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              count > 0
+                ? 'Restored $count photo${count == 1 ? '' : 's'} successfully!'
+                : 'No photos found in backup file.'),
+            backgroundColor: count > 0 ? Colors.green : null,
+          ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo restore failed. The backup file may be corrupted.'),
+            backgroundColor: Colors.red,
+          ));
+      }
+    }
+  }
+
+  // ── Wipe all data ──────────────────────────────────────────────────
+  Future<void> _wipeAll(BuildContext context) async {
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Wipe all data?'),
+            content: const Text('This permanently deletes all vehicles, parts and photos from this device. This cannot be undone.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Wipe everything'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok || !context.mounted) return;
+    await widget.onWipeAll();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Backup & Restore')),
+      body: Stack(
+        children: [
+          SizedBox.expand(child: CustomPaint(painter: _grainPainter)),
+          ListView(
+            padding: const EdgeInsets.all(kPad),
+            children: [
+
+              // ── Data summary ─────────────────────────────────────────
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.cloud_upload_outlined, color: Color(0xFFE8700A)),
+                        SizedBox(width: 10),
+                        Text('Backup & Restore', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Your data is stored on this device only. '
+                      'Back up regularly so you never lose your inventory.',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13, height: 1.5),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _DataPill(label: 'Vehicles', value: '${widget.vehicles.length}', icon: Icons.directions_car),
+                          _DataPill(label: 'Parts', value: '$_totalParts', icon: Icons.inventory_2),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: kPad),
+
+              // ── Backup Data ───────────────────────────────────────────
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.save_outlined, size: 15, color: Color(0xFFE8700A)),
+                      const SizedBox(width: 8),
+                      Text('Backup Data',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.8))),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Saves all your vehicle and part records as a .json file. '
+                      'Store it somewhere safe — Google Drive, email, USB, etc.',
+                      style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.45), height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => _backup(context),
+                        icon: const Icon(Icons.upload),
+                        label: const Text('Backup Data Now'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFE8700A),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _restore(context),
+                        icon: const Icon(Icons.download),
+                        label: const Text('Restore Data from Backup'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Row(children: [
+                      Icon(Icons.info_outline, size: 13, color: Colors.white24),
+                      SizedBox(width: 6),
+                      Expanded(child: Text(
+                        'Photos are not included — back them up separately using Backup Photos below.',
+                        style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+                      )),
+                    ]),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: kPad),
+
+              // ── Backup Photos ─────────────────────────────────────────
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.photo_library_outlined, size: 15, color: Color(0xFFE8700A)),
+                      const SizedBox(width: 8),
+                      Text('Backup Photos',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.8))),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Saves all photos as a .zip file. '
+                      'Restore data backup first, then restore photos.',
+                      style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.45), height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => _backupPhotos(context),
+                        icon: const Icon(Icons.photo_library),
+                        label: const Text('Backup Photos Now'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white12,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _restorePhotos(context),
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text('Restore Photos from Backup'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: kPad),
+
+              // ── Export to Another Location ────────────────────────────
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.open_in_new, size: 15, color: Color(0xFFE8700A)),
+                      const SizedBox(width: 8),
+                      Text('Export to Another Location',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.8))),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Export your data to open in a spreadsheet or another app. '
+                      'Not intended as a backup — use Backup Data above for that.',
+                      style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.45), height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _exportJson(context),
+                        icon: const Icon(Icons.code),
+                        label: const Text('Export as JSON'),
+                        style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _exportCsv(context),
+                        icon: const Icon(Icons.table_rows_outlined),
+                        label: const Text('Export as CSV (spreadsheet)'),
+                        style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: kPad),
+
+              // ── Danger Zone ───────────────────────────────────────────
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(children: [
+                      Icon(Icons.warning_amber_rounded, size: 15, color: Colors.redAccent),
+                      SizedBox(width: 8),
+                      Text('Danger Zone', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.redAccent)),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(
+                      'These actions are permanent and cannot be undone. Make sure you have a backup first.',
+                      style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.45), height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _deleteAllSoldPhotos(context),
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        label: const Text('Delete photos of all sold parts'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: const BorderSide(color: Colors.redAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Row(children: [
+                      Icon(Icons.info_outline, size: 13, color: Colors.white24),
+                      SizedBox(width: 6),
+                      Expanded(child: Text(
+                        'Frees up storage by removing photos from sold parts across all vehicles.',
+                        style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+                      )),
+                    ]),
+                    const SizedBox(height: 14),
+                    const Divider(color: Colors.white10),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _wipeAll(context),
+                        icon: const Icon(Icons.delete_forever_outlined),
+                        label: const Text('Wipe all data'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: const BorderSide(color: Colors.redAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Row(children: [
+                      Icon(Icons.info_outline, size: 13, color: Colors.white24),
+                      SizedBox(width: 6),
+                      Expanded(child: Text(
+                        'Permanently deletes all vehicles, parts and photos from this device.',
+                        style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+                      )),
+                    ]),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: kPad),
+            ],
           ),
         ],
       ),
