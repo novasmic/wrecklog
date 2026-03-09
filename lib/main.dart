@@ -8167,7 +8167,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     downloadTextFileWeb(filename: 'wrecklog_export.csv', content: content);
   }
 
-  // ── Backup: write JSON to temp file and share ──────────────────────
+  // ── Backup: save JSON file ─────────────────────────────────────────
   Future<void> _backup(BuildContext context) async {
     try {
       final json = await vehiclesToPrettyJson(widget.vehicles);
@@ -8182,10 +8182,30 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         return;
       }
 
+      // Desktop (Windows/macOS/Linux): show a save-file dialog.
+      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux)) {
+        final savePath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save WreckLog Backup',
+          fileName: filename,
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+        );
+        if (savePath == null) return; // user cancelled
+        await File(savePath).writeAsString(json);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Backup saved to $savePath'), backgroundColor: Colors.green),
+          );
+        }
+        return;
+      }
+
+      // Mobile (Android/iOS): share sheet.
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/$filename');
       await file.writeAsString(json);
-
       await Share.shareXFiles(
         [XFile(file.path, mimeType: 'application/json')],
         subject: 'WreckLog Backup $stamp',
