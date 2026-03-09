@@ -366,6 +366,17 @@ class _AppShellState extends State<AppShell> {
           ),
         ],
         ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _tab,
+          onDestinationSelected: (i) => setState(() => _tab = i),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
+            NavigationDestination(icon: Icon(Icons.directions_car), label: 'Vehicles'),
+            NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
+            NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Stats'),
+            NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
+          ],
+        ),
       ),
     );
   }
