@@ -145,10 +145,18 @@ class _GridButton extends StatelessWidget {
 
 class HomeScreen extends StatelessWidget {
   final VoidCallback onAddVehicle;
+  final VoidCallback onViewVehicles;
+  final VoidCallback onSearchParts;
+  final VoidCallback onStats;
+  final VoidCallback onSettings;
 
   const HomeScreen({
     super.key,
     required this.onAddVehicle,
+    required this.onViewVehicles,
+    required this.onSearchParts,
+    required this.onStats,
+    required this.onSettings,
   });
 
   @override
@@ -281,17 +289,51 @@ class HomeScreen extends StatelessWidget {
 
                 const Spacer(flex: 2),
 
-                // ── Add Vehicle button ───────────────────────────────
+                // ── Button stack ────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _GridButton(
-                    icon: Icons.add_circle_outline,
-                    label: 'Add Vehicle',
-                    onTap: onAddVehicle,
+                  child: Column(
+                    children: [
+                      _GridButton(
+                        icon: Icons.add_circle_outline,
+                        label: 'Add Vehicle',
+                        onTap: onAddVehicle,
+                      ),
+                      const SizedBox(height: 12),
+                      _GridButton(
+                        icon: Icons.directions_car_outlined,
+                        label: 'View Vehicles',
+                        onTap: onViewVehicles,
+                      ),
+                      const SizedBox(height: 12),
+                      _GridButton(
+                        icon: Icons.search,
+                        label: 'Search Parts',
+                        onTap: onSearchParts,
+                      ),
+                      const SizedBox(height: 12),
+                      _GridButton(
+                        icon: Icons.bar_chart_rounded,
+                        label: 'Stats',
+                        onTap: onStats,
+                      ),
+                    ],
                   ),
                 ),
 
                 const Spacer(flex: 2),
+
+                // ── Settings link ──────────────────────────────────
+                TextButton.icon(
+                  onPressed: onSettings,
+                  icon: const Icon(Icons.settings_outlined, size: 15, color: Colors.white30),
+                  label: const Text(
+                    'Settings',
+                    style: TextStyle(color: Colors.white30, fontSize: 13),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
               ],
             ),
           ),

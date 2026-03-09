@@ -296,23 +296,37 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Home screen is the navigation hub — shown without a nav bar.
+    if (_tab == 0) {
+      return HomeScreen(
+        onAddVehicle:   () => setState(() => _tab = 1),
+        onViewVehicles: () => setState(() => _tab = 1),
+        onSearchParts:  () => setState(() => _tab = 2),
+        onStats:        () => setState(() => _tab = 3),
+        onSettings:     () => setState(() => _tab = 4),
+      );
+    }
+
     // IndexedStack keeps all tab widgets alive — state (search query, scroll
     // position, etc.) is preserved when switching between tabs.
-    return Scaffold(
-      body: IndexedStack(
-        index: _tab,
-        children: [
-          HomeScreen(
-            onAddVehicle: () => setState(() => _tab = 1),
-          ),
-          VehiclesHome(
-            loading: _loading,
-            vehicles: _vehicles,
-            onReload: _load,
-            onAddVehicle: _addVehicle,
-            onUpdateVehicle: _updateVehicle,
-            onDeleteVehicle: _deleteVehicle,
-          ),
+    // PopScope intercepts the back gesture to return to the home screen.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _tab = 0);
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _tab - 1,
+          children: [
+            VehiclesHome(
+              loading: _loading,
+              vehicles: _vehicles,
+              onReload: _load,
+              onAddVehicle: _addVehicle,
+              onUpdateVehicle: _updateVehicle,
+              onDeleteVehicle: _deleteVehicle,
+            ),
           PartsSearchTab(
             vehicles: _vehicles,
             onOpenVehicle: (vehicleId) async {
@@ -351,17 +365,7 @@ class _AppShellState extends State<AppShell> {
             },
           ),
         ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.directions_car), label: 'Vehicles'),
-          NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
-          NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Stats'),
-          NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
-        ],
+        ),
       ),
     );
   }
