@@ -4,8 +4,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'io_file_stub.dart' if (dart.library.io) 'io_file_io.dart';
 import 'home_screen.dart';
-import 'package:flutter/foundation.dart';
-
 // Web-only download (safe on Android/iOS via conditional import)
 import 'web_download_stub.dart' if (dart.library.html) 'web_download_web.dart';
 
