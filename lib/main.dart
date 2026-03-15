@@ -856,8 +856,8 @@ String formatMoneyFromCents(int cents) {
   final abs = cents.abs();
   final dollars = abs ~/ 100;
   final rem = abs % 100;
-  final remStr = rem.toString().padLeft(2, '0');
-  return '$sign\$$dollars.$remStr';
+  if (rem == 0) return '$sign\$$dollars';
+  return '$sign\$$dollars.${rem.toString().padLeft(2, '0')}';
 }
 
 int? parseMoneyToCents(String input) {
@@ -7110,6 +7110,7 @@ class StatsTab extends StatefulWidget {
     final abs = cents.abs();
     final dollars = abs ~/ 100;
     final rem = abs % 100;
+    if (rem == 0) return '$sign\$${StatsTab._withCommas(dollars)}';
     return '$sign\$${StatsTab._withCommas(dollars)}.${rem.toString().padLeft(2, '0')}';
   }
 
