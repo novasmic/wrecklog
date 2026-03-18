@@ -572,6 +572,22 @@ class Part {
   /// User-assigned category. Null for uncategorised / legacy parts.
   String? category;
 
+  // Vehicle snapshot (copied from vehicle at creation, never updated)
+  String? vehicleMake;
+  String? vehicleModel;
+  int? vehicleYear;
+  String? vehicleTrim;
+  String? vehicleEngine;
+  String? vehicleTransmission;
+  String? vehicleDrivetrain;
+  int? vehicleUsageValue;
+  String? vehicleUsageUnit;
+
+  // Part metadata
+  String? partCondition;
+  DateTime? dateListed;
+  DateTime? dateSold;
+
   Part({
     required this.id,
     required this.name,
@@ -586,6 +602,18 @@ class Part {
     this.stockId,
     this.updatedAt,
     this.category,
+    this.vehicleMake,
+    this.vehicleModel,
+    this.vehicleYear,
+    this.vehicleTrim,
+    this.vehicleEngine,
+    this.vehicleTransmission,
+    this.vehicleDrivetrain,
+    this.vehicleUsageValue,
+    this.vehicleUsageUnit,
+    this.partCondition,
+    this.dateListed,
+    this.dateSold,
     List<String>? photoIds,
     List<Listing>? listings,
   }) : photoIds = photoIds ?? [],
@@ -601,6 +629,12 @@ class Part {
   int get totalLinksCount => listings.where((l) => l.url.trim().isNotEmpty).length;
 
   int get liveLinksCount => listings.where((l) => l.url.trim().isNotEmpty && l.isLive).length;
+
+  int? get daysToSell {
+    if (dateListed == null || dateSold == null) return null;
+    final days = dateSold!.difference(dateListed!).inDays;
+    return days < 0 ? null : days;
+  }
 
   int daysInStock({DateTime? now}) {
     final n = now ?? DateTime.now();
@@ -625,6 +659,18 @@ class Part {
         'stockId': stockId,
         'photoIds': photoIds,
         'category': category,
+        'vehicleMake': vehicleMake,
+        'vehicleModel': vehicleModel,
+        'vehicleYear': vehicleYear,
+        'vehicleTrim': vehicleTrim,
+        'vehicleEngine': vehicleEngine,
+        'vehicleTransmission': vehicleTransmission,
+        'vehicleDrivetrain': vehicleDrivetrain,
+        'vehicleUsageValue': vehicleUsageValue,
+        'vehicleUsageUnit': vehicleUsageUnit,
+        'partCondition': partCondition,
+        'dateListed': dateListed?.toIso8601String(),
+        'dateSold': dateSold?.toIso8601String(),
       };
 
   static Part fromJson(Map<String, dynamic> j) {
@@ -645,6 +691,18 @@ class Part {
       updatedAt: j['updatedAt'] == null ? null : DateTime.tryParse(j['updatedAt'] as String),
       photoIds: (j['photoIds'] as List<dynamic>?)?.map((e) => e as String).toList(),
       category: j['category'] as String?,
+      vehicleMake: j['vehicleMake'] as String?,
+      vehicleModel: j['vehicleModel'] as String?,
+      vehicleYear: (j['vehicleYear'] as num?)?.toInt(),
+      vehicleTrim: j['vehicleTrim'] as String?,
+      vehicleEngine: j['vehicleEngine'] as String?,
+      vehicleTransmission: j['vehicleTransmission'] as String?,
+      vehicleDrivetrain: j['vehicleDrivetrain'] as String?,
+      vehicleUsageValue: (j['vehicleUsageValue'] as num?)?.toInt(),
+      vehicleUsageUnit: j['vehicleUsageUnit'] as String?,
+      partCondition: j['partCondition'] as String?,
+      dateListed: j['dateListed'] == null ? null : DateTime.tryParse(j['dateListed'] as String),
+      dateSold: j['dateSold'] == null ? null : DateTime.tryParse(j['dateSold'] as String),
     );
   }
 }
@@ -677,6 +735,12 @@ class Vehicle {
   DateTime? updatedAt;
   List<String> photoIds;    // reserved for photo feature
 
+  /// v1.3 market data fields — optional vehicle spec details.
+  String? trim;
+  String? engine;
+  String? transmission;
+  String? drivetrain;
+
   Vehicle({
     required this.id,
     required this.make,
@@ -693,6 +757,10 @@ class Vehicle {
     this.color = '',
     this.notes,
     this.updatedAt,
+    this.trim,
+    this.engine,
+    this.transmission,
+    this.drivetrain,
     List<String>? photoIds,
   }) : photoIds = photoIds ?? [];
 
@@ -736,6 +804,10 @@ class Vehicle {
         'notes': notes,
         'updatedAt': updatedAt?.toIso8601String(),
         'photoIds': photoIds,
+        'trim': trim,
+        'engine': engine,
+        'transmission': transmission,
+        'drivetrain': drivetrain,
       };
 
   static Vehicle fromJson(Map<String, dynamic> j) {
@@ -757,6 +829,10 @@ class Vehicle {
       notes: j['notes'] as String?,
       updatedAt: j['updatedAt'] == null ? null : DateTime.tryParse(j['updatedAt'] as String),
       photoIds: (j['photoIds'] as List<dynamic>?)?.map((e) => e as String).toList(),
+      trim: j['trim'] as String?,
+      engine: j['engine'] as String?,
+      transmission: j['transmission'] as String?,
+      drivetrain: j['drivetrain'] as String?,
     );
   }
 }
@@ -2873,6 +2949,10 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   final _colorCtrl = TextEditingController();
   final _usageCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _trimCtrl = TextEditingController();
+  final _engineCtrl = TextEditingController();
+  final _transmissionCtrl = TextEditingController();
+  final _drivetrainCtrl = TextEditingController();
 
   ItemType _itemType = ItemType.car;
   DateTime _acquiredAt = DateTime.now();
@@ -2889,6 +2969,10 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
     _colorCtrl.dispose();
     _usageCtrl.dispose();
     _notesCtrl.dispose();
+    _trimCtrl.dispose();
+    _engineCtrl.dispose();
+    _transmissionCtrl.dispose();
+    _drivetrainCtrl.dispose();
     super.dispose();
   }
 
@@ -2928,6 +3012,10 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
       usageUnit: _usageUnit,
       color: _colorCtrl.text.trim(),
       notes: notes.isEmpty ? null : notes,
+      trim: _trimCtrl.text.trim().isEmpty ? null : _trimCtrl.text.trim(),
+      engine: _engineCtrl.text.trim().isEmpty ? null : _engineCtrl.text.trim(),
+      transmission: _transmissionCtrl.text.trim().isEmpty ? null : _transmissionCtrl.text.trim(),
+      drivetrain: _drivetrainCtrl.text.trim().isEmpty ? null : _drivetrainCtrl.text.trim(),
     );
 
     await RecentModelStorage.add(_itemType, v.make, v.model);
@@ -2999,6 +3087,34 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
+                    controller: _trimCtrl,
+                    decoration: const InputDecoration(labelText: 'Trim (optional)'),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _engineCtrl,
+                    decoration: const InputDecoration(labelText: 'Engine (optional)'),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _transmissionCtrl,
+                    decoration: const InputDecoration(labelText: 'Transmission (optional)'),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _drivetrainCtrl,
+                    decoration: const InputDecoration(labelText: 'Drivetrain (optional)'),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
                     controller: _idCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Identifier (optional)',
@@ -3062,6 +3178,11 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Vehicle details are copied into parts added under this vehicle. Accurate information helps keep part records reliable.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _purchaseCtrl,
@@ -3122,6 +3243,10 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
   late final TextEditingController _colorCtrl;
   late final TextEditingController _usageCtrl;
   late final TextEditingController _notesCtrl;
+  late final TextEditingController _trimCtrl;
+  late final TextEditingController _engineCtrl;
+  late final TextEditingController _transmissionCtrl;
+  late final TextEditingController _drivetrainCtrl;
 
   late ItemType _itemType;
   late DateTime _acquiredAt;
@@ -3145,6 +3270,10 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       text: v.usageValue != null ? v.usageValue.toString() : '',
     );
     _notesCtrl = TextEditingController(text: v.notes ?? '');
+    _trimCtrl = TextEditingController(text: v.trim ?? '');
+    _engineCtrl = TextEditingController(text: v.engine ?? '');
+    _transmissionCtrl = TextEditingController(text: v.transmission ?? '');
+    _drivetrainCtrl = TextEditingController(text: v.drivetrain ?? '');
     _itemType = v.itemType;
     _acquiredAt = v.acquiredAt;
     _usageUnit = v.usageUnit;
@@ -3160,6 +3289,10 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
     _colorCtrl.dispose();
     _usageCtrl.dispose();
     _notesCtrl.dispose();
+    _trimCtrl.dispose();
+    _engineCtrl.dispose();
+    _transmissionCtrl.dispose();
+    _drivetrainCtrl.dispose();
     super.dispose();
   }
 
@@ -3199,6 +3332,10 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       usageUnit: _usageUnit,
       color: _colorCtrl.text.trim(),
       notes: notes.isEmpty ? null : notes,
+      trim: _trimCtrl.text.trim().isEmpty ? null : _trimCtrl.text.trim(),
+      engine: _engineCtrl.text.trim().isEmpty ? null : _engineCtrl.text.trim(),
+      transmission: _transmissionCtrl.text.trim().isEmpty ? null : _transmissionCtrl.text.trim(),
+      drivetrain: _drivetrainCtrl.text.trim().isEmpty ? null : _drivetrainCtrl.text.trim(),
     );
 
     await RecentModelStorage.add(_itemType, updated.make, updated.model);
@@ -3269,6 +3406,34 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
+                    controller: _trimCtrl,
+                    decoration: const InputDecoration(labelText: 'Trim (optional)'),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _engineCtrl,
+                    decoration: const InputDecoration(labelText: 'Engine (optional)'),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _transmissionCtrl,
+                    decoration: const InputDecoration(labelText: 'Transmission (optional)'),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _drivetrainCtrl,
+                    decoration: const InputDecoration(labelText: 'Drivetrain (optional)'),
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
                     controller: _idCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Identifier (optional)',
@@ -3326,6 +3491,11 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Vehicle details are copied into parts added under this vehicle. Accurate information helps keep part records reliable.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
@@ -3428,7 +3598,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       if (!mounted) return;
     }
     final created = await Navigator.of(context).push<Part>(
-      MaterialPageRoute(builder: (_) => AddPartScreen(allVehicles: _allVehiclesWithCurrent())),
+      MaterialPageRoute(builder: (_) => AddPartScreen(allVehicles: _allVehiclesWithCurrent(), vehicle: _v)),
     );
     if (!mounted || created == null) return;
     setState(() {
@@ -3493,6 +3663,15 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
             createdAt: DateTime.now(),
             qty: 1,
             stockId: stockId,
+            vehicleMake: _v.make,
+            vehicleModel: _v.model,
+            vehicleYear: _v.year,
+            vehicleTrim: _v.trim,
+            vehicleEngine: _v.engine,
+            vehicleTransmission: _v.transmission,
+            vehicleDrivetrain: _v.drivetrain,
+            vehicleUsageValue: _v.usageValue,
+            vehicleUsageUnit: _v.usageUnit,
           ),
         );
       }
@@ -4840,8 +5019,9 @@ class PartCard extends StatelessWidget {
 class AddPartScreen extends StatefulWidget {
   /// Pass all current vehicles so we can generate a collision-free stock ID.
   final List<Vehicle> allVehicles;
+  final Vehicle vehicle;
 
-  const AddPartScreen({super.key, required this.allVehicles});
+  const AddPartScreen({super.key, required this.allVehicles, required this.vehicle});
 
   @override
   State<AddPartScreen> createState() => _AddPartScreenState();
@@ -4856,9 +5036,25 @@ class _AddPartScreenState extends State<AddPartScreen> {
   final _qtyCtrl = TextEditingController(text: '1');
   final _notesCtrl = TextEditingController();
   final _linkCtrl = TextEditingController();
+  final _conditionCtrl = TextEditingController();
+  final _saleCtrl = TextEditingController();
   bool _showLink = false;
   String? _category;
   List<String> _categories = List.from(kPartCategories);
+
+  DateTime? _dateListed;
+  DateTime? _dateSold;
+
+  // Vehicle snapshot fields (prefilled from widget.vehicle)
+  String? _vMake;
+  String? _vModel;
+  int? _vYear;
+  String? _vTrim;
+  String? _vEngine;
+  String? _vTransmission;
+  String? _vDrivetrain;
+  int? _vUsageValue;
+  String? _vUsageUnit;
 
   /// Generated once on initState, shown read-only to the user.
   late final String _stockId;
@@ -4870,6 +5066,16 @@ class _AddPartScreenState extends State<AddPartScreen> {
     PartCategoryStorage.load().then((cats) {
       if (mounted) setState(() => _categories = cats);
     }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
+    final v = widget.vehicle;
+    _vMake = v.make.isEmpty ? null : v.make;
+    _vModel = v.model.isEmpty ? null : v.model;
+    _vYear = v.year;
+    _vTrim = v.trim;
+    _vEngine = v.engine;
+    _vTransmission = v.transmission;
+    _vDrivetrain = v.drivetrain;
+    _vUsageValue = v.usageValue;
+    _vUsageUnit = v.usageUnit.isEmpty ? null : v.usageUnit;
   }
 
   @override
@@ -4881,22 +5087,51 @@ class _AddPartScreenState extends State<AddPartScreen> {
     _qtyCtrl.dispose();
     _notesCtrl.dispose();
     _linkCtrl.dispose();
+    _conditionCtrl.dispose();
+    _saleCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDateListed() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 1),
+      initialDate: _dateListed ?? now,
+    );
+    if (picked == null) return;
+    setState(() => _dateListed = picked);
+  }
+
+  Future<void> _pickDateSold() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 1),
+      initialDate: _dateSold ?? now,
+    );
+    if (picked == null) return;
+    setState(() => _dateSold = picked);
   }
 
   void _save() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final askCents = parseMoneyToCents(_askCtrl.text);
+    final saleCents = parseMoneyToCents(_saleCtrl.text);
     final pn = _pnCtrl.text.trim();
     final qty = int.tryParse(_qtyCtrl.text.trim()) ?? 1;
     final notes = _notesCtrl.text.trim();
     final loc = _locCtrl.text.trim();
+    final condition = _conditionCtrl.text.trim();
 
     // Optional link — saved as a Listing record but NOT marked live.
     // User can mark it live via the part's links screen when ready.
     final url = _linkCtrl.text.trim();
     final listings = <Listing>[];
+    DateTime? dateListed = _dateListed;
     if (url.isNotEmpty) {
       final detected = detectPlatformFromUrl(url);
       listings.add(Listing(
@@ -4906,6 +5141,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
         isLive: true,
         createdAt: DateTime.now(),
       ));
+      dateListed ??= DateTime.now();
     }
 
     final p = Part(
@@ -4916,11 +5152,24 @@ class _AddPartScreenState extends State<AddPartScreen> {
       location: loc.isEmpty ? null : loc,
       notes: notes.isEmpty ? null : notes,
       askingPriceCents: askCents,
+      salePriceCents: saleCents,
       partNumber: pn.isEmpty ? null : pn,
       qty: qty < 1 ? 1 : qty,
       listings: listings,
       stockId: _stockId,
       category: _category,
+      vehicleMake: _vMake,
+      vehicleModel: _vModel,
+      vehicleYear: _vYear,
+      vehicleTrim: _vTrim,
+      vehicleEngine: _vEngine,
+      vehicleTransmission: _vTransmission,
+      vehicleDrivetrain: _vDrivetrain,
+      vehicleUsageValue: _vUsageValue,
+      vehicleUsageUnit: _vUsageUnit,
+      partCondition: condition.isEmpty ? null : condition,
+      dateListed: dateListed,
+      dateSold: _dateSold,
     );
 
     Navigator.of(context).pop(p);
@@ -5037,6 +5286,68 @@ class _AddPartScreenState extends State<AddPartScreen> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     textInputAction: TextInputAction.next,
                   ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _saleCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Sold price',
+                      hintText: 'Optional',
+                      prefixText: '\$',
+                      prefixIcon: Icon(Icons.payments_outlined),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _conditionCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Condition (optional)',
+                      hintText: 'Good / Used / Damaged',
+                      prefixIcon: Icon(Icons.stars_outlined),
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _pickDateListed,
+                          icon: const Icon(Icons.calendar_today, size: 16),
+                          label: Text(
+                            _dateListed != null ? 'Listed: ${formatDateShort(_dateListed!)}' : 'Date Listed: Not set',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _pickDateSold,
+                          icon: const Icon(Icons.calendar_today, size: 16),
+                          label: Text(
+                            _dateSold != null ? 'Sold: ${formatDateShort(_dateSold!)}' : 'Date Sold: Not set',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_dateListed != null && _dateSold != null) ...[
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      const Icon(Icons.timer_outlined, size: 14, color: Colors.white38),
+                      const SizedBox(width: 6),
+                      Text('Days to sell: ${_dateSold!.difference(_dateListed!).inDays >= 0 ? _dateSold!.difference(_dateListed!).inDays : "—"}',
+                        style: const TextStyle(fontSize: 13, color: Colors.white54)),
+                    ]),
+                  ],
 
                   divider,
 
@@ -5191,6 +5502,11 @@ class _EditPartDialogState extends State<EditPartDialog> {
   late final TextEditingController _pnCtrl;
   late final TextEditingController _qtyCtrl;
   late final TextEditingController _notesCtrl;
+  late final TextEditingController _conditionCtrl;
+  late final TextEditingController _saleCtrl;
+
+  DateTime? _dateListed;
+  DateTime? _dateSold;
 
   @override
   void initState() {
@@ -5207,6 +5523,12 @@ class _EditPartDialogState extends State<EditPartDialog> {
     _pnCtrl = TextEditingController(text: _p.partNumber ?? '');
     _qtyCtrl = TextEditingController(text: _p.qty.toString());
     _notesCtrl = TextEditingController(text: _p.notes ?? '');
+    _conditionCtrl = TextEditingController(text: _p.partCondition ?? '');
+    _saleCtrl = TextEditingController(
+      text: _p.salePriceCents == null ? '' : (_p.salePriceCents! / 100).toStringAsFixed(2),
+    );
+    _dateListed = _p.dateListed;
+    _dateSold = _p.dateSold;
   }
 
   @override
@@ -5217,7 +5539,33 @@ class _EditPartDialogState extends State<EditPartDialog> {
     _pnCtrl.dispose();
     _qtyCtrl.dispose();
     _notesCtrl.dispose();
+    _conditionCtrl.dispose();
+    _saleCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDateListed() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 1),
+      initialDate: _dateListed ?? now,
+    );
+    if (picked == null) return;
+    setState(() => _dateListed = picked);
+  }
+
+  Future<void> _pickDateSold() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 1),
+      initialDate: _dateSold ?? now,
+    );
+    if (picked == null) return;
+    setState(() => _dateSold = picked);
   }
 
   Future<void> _addListing() async {
@@ -5230,6 +5578,9 @@ class _EditPartDialogState extends State<EditPartDialog> {
     setState(() {
       _p.listings.insert(0, created);
       normalizePartStateFromListings(_p);
+      if (_dateListed == null) {
+        _dateListed = DateTime.now();
+      }
     });
   }
 
@@ -5277,6 +5628,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
     _p.location = loc.isEmpty ? null : loc;
 
     _p.askingPriceCents = parseMoneyToCents(_askCtrl.text);
+    _p.salePriceCents = parseMoneyToCents(_saleCtrl.text);
 
     final pn = _pnCtrl.text.trim();
     _p.partNumber = pn.isEmpty ? null : pn;
@@ -5286,6 +5638,12 @@ class _EditPartDialogState extends State<EditPartDialog> {
 
     final notes = _notesCtrl.text.trim();
     _p.notes = notes.isEmpty ? null : notes;
+
+    final condition = _conditionCtrl.text.trim();
+    _p.partCondition = condition.isEmpty ? null : condition;
+
+    _p.dateListed = _dateListed;
+    _p.dateSold = _dateSold;
 
     normalizePartStateFromListings(_p);
 
@@ -5354,6 +5712,51 @@ class _EditPartDialogState extends State<EditPartDialog> {
                 ),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
               ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _saleCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Sold price (optional)',
+                  prefixText: '\$',
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _conditionCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Condition (optional)',
+                  hintText: 'Good / Used / Damaged',
+                ),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _pickDateListed,
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: Text(
+                  _dateListed != null ? 'Listed: ${formatDateShort(_dateListed!)}' : 'Date Listed: Not set',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _pickDateSold,
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: Text(
+                  _dateSold != null ? 'Sold: ${formatDateShort(_dateSold!)}' : 'Date Sold: Not set',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              if (_dateListed != null && _dateSold != null) ...[
+                const SizedBox(height: 8),
+                Row(children: [
+                  const Icon(Icons.timer_outlined, size: 14, color: Colors.white38),
+                  const SizedBox(width: 6),
+                  Text('Days to sell: ${_dateSold!.difference(_dateListed!).inDays >= 0 ? _dateSold!.difference(_dateListed!).inDays : "—"}',
+                    style: const TextStyle(fontSize: 13, color: Colors.white54)),
+                ]),
+              ],
               const SizedBox(height: 10),
               TextFormField(
                 controller: _notesCtrl,
