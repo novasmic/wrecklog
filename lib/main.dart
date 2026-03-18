@@ -5038,6 +5038,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
   final _linkCtrl = TextEditingController();
   final _conditionCtrl = TextEditingController();
   final _saleCtrl = TextEditingController();
+  final _nameFocusNode = FocusNode();
   bool _showLink = false;
   String? _category;
   List<String> _categories = List.from(kPartCategories);
@@ -5066,6 +5067,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
     PartCategoryStorage.load().then((cats) {
       if (mounted) setState(() => _categories = cats);
     }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
+    _nameFocusNode.addListener(_onNameFocusChanged);
     final v = widget.vehicle;
     _vMake = v.make.isEmpty ? null : v.make;
     _vModel = v.model.isEmpty ? null : v.model;
@@ -5089,7 +5091,54 @@ class _AddPartScreenState extends State<AddPartScreen> {
     _linkCtrl.dispose();
     _conditionCtrl.dispose();
     _saleCtrl.dispose();
+    _nameFocusNode.dispose();
     super.dispose();
+  }
+
+  // ── Autofill from previous entries ────────────────────────────────
+  Part? _findBestMatchingPart(String name) {
+    if (name.trim().isEmpty) return null;
+    final lower = name.trim().toLowerCase();
+    Part? best;
+    for (final v in widget.allVehicles) {
+      for (final p in v.parts) {
+        if (p.name.toLowerCase() == lower) {
+          if (best == null || p.createdAt.isAfter(best.createdAt)) best = p;
+        }
+      }
+    }
+    return best;
+  }
+
+  void _onNameFocusChanged() {
+    if (_nameFocusNode.hasFocus) return;
+    final match = _findBestMatchingPart(_nameCtrl.text);
+    if (match == null) return;
+
+    bool filled = false;
+    setState(() {
+      if (_category == null && match.category != null) {
+        _category = match.category;
+        filled = true;
+      }
+      if (_conditionCtrl.text.isEmpty && match.partCondition != null) {
+        _conditionCtrl.text = match.partCondition!;
+        filled = true;
+      }
+      if (_pnCtrl.text.isEmpty && match.partNumber != null) {
+        _pnCtrl.text = match.partNumber!;
+        filled = true;
+      }
+    });
+
+    if (filled && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Prefilled from a previous entry'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Future<void> _pickDateListed() async {
@@ -5196,6 +5245,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                   // ── Part name ─────────────────────────────────────────
                   TextFormField(
                     controller: _nameCtrl,
+                    focusNode: _nameFocusNode,
                     decoration: const InputDecoration(
                       labelText: 'Part name *',
                       hintText: 'Tailgate / Headlight / ECU',
