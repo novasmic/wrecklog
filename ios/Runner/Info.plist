@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>WreckLog uses your photo library to attach photos to vehicles and parts.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>WreckLog uses your camera to take photos of vehicles and parts.</string>
 </dict>
 </plist>
