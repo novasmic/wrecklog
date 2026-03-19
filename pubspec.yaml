@@ -31,6 +31,7 @@ dev_dependencies:
 
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
+  image: ^4.3.0
 
 flutter:
   uses-material-design: true
@@ -42,6 +43,7 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/icon/icon_fg.png
+  image_path_android: assets/icon/icon_fg.png
+  image_path_ios: assets/icon/icon_ios.png
   adaptive_icon_foreground: assets/icon/icon_fg.png
   adaptive_icon_background: "#2E7D32"
