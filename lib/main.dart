@@ -1022,6 +1022,54 @@ Future<void> copyToClipboard(BuildContext context, String text, {String message 
 const int kFreeVehicleLimit = 1;
 const int kFreePartLimitPerVehicle = 5;
 
+/// Simple keyword → category mapping for part name suggestions.
+/// Keys are lowercase. Checked via String.contains so "headlight" matches "headlight assembly".
+const Map<String, String> kPartCategorySuggestions = {
+  // Engine
+  'engine': 'Engine', 'motor': 'Engine', 'block': 'Engine', 'head': 'Engine',
+  'cam': 'Engine', 'camshaft': 'Engine', 'crankshaft': 'Engine', 'piston': 'Engine',
+  'valve': 'Engine', 'timing': 'Engine', 'injector': 'Engine', 'turbo': 'Engine',
+  'supercharger': 'Engine', 'intercooler': 'Engine', 'oil pump': 'Engine',
+  // Transmission
+  'gearbox': 'Transmission', 'transmission': 'Transmission', 'diff': 'Transmission',
+  'differential': 'Transmission', 'transfer case': 'Transmission', 'clutch': 'Transmission',
+  'torque converter': 'Transmission', 'driveshaft': 'Transmission', 'cv joint': 'Transmission',
+  'axle': 'Transmission',
+  // Electrical
+  'alternator': 'Electrical', 'starter': 'Electrical', 'battery': 'Electrical',
+  'ecu': 'Electrical', 'fuse': 'Electrical', 'wiring': 'Electrical',
+  'sensor': 'Electrical', 'relay': 'Electrical', 'module': 'Electrical',
+  'computer': 'Electrical', 'switch': 'Electrical',
+  // Lighting
+  'headlight': 'Lighting', 'taillight': 'Lighting', 'indicator': 'Lighting',
+  'light': 'Lighting', 'lamp': 'Lighting', 'foglight': 'Lighting',
+  // Body
+  'door': 'Body', 'bonnet': 'Body', 'hood': 'Body', 'fender': 'Body',
+  'bumper': 'Body', 'guard': 'Body', 'panel': 'Body', 'boot': 'Body',
+  'trunk': 'Body', 'mirror': 'Body', 'glass': 'Body', 'windscreen': 'Body',
+  'window': 'Body', 'roof': 'Body',
+  // Interior
+  'seat': 'Interior', 'dash': 'Interior', 'dashboard': 'Interior',
+  'carpet': 'Interior', 'console': 'Interior', 'trim': 'Interior',
+  'airbag': 'Interior', 'seatbelt': 'Interior', 'steering wheel': 'Interior',
+  // Suspension
+  'strut': 'Suspension', 'shock': 'Suspension', 'spring': 'Suspension',
+  'control arm': 'Suspension', 'tie rod': 'Suspension', 'ball joint': 'Suspension',
+  'sway bar': 'Suspension', 'hub': 'Suspension', 'knuckle': 'Suspension',
+  // Brakes
+  'brake': 'Brakes', 'caliper': 'Brakes', 'rotor': 'Brakes',
+  'disc': 'Brakes', 'pad': 'Brakes', 'drum': 'Brakes', 'abs': 'Brakes',
+  // Cooling
+  'radiator': 'Cooling', 'thermostat': 'Cooling', 'water pump': 'Cooling',
+  'coolant': 'Cooling', 'fan': 'Cooling',
+  // Exhaust
+  'exhaust': 'Exhaust', 'muffler': 'Exhaust', 'catalytic': 'Exhaust',
+  'manifold': 'Exhaust', 'downpipe': 'Exhaust',
+  // Fuel
+  'fuel pump': 'Fuel', 'fuel tank': 'Fuel', 'fuel rail': 'Fuel',
+  'carburetor': 'Fuel', 'carby': 'Fuel',
+};
+
 // Debug-only Pro override — compiled out in release builds.
 // Persisted so it survives hot restarts during a session.
 const String _kDebugProKey = 'debug_pro_enabled';
@@ -5080,6 +5128,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
   final _nameFocusNode = FocusNode();
   bool _showLink = false;
   String? _category;
+  String? _suggestedCategory;
   List<String> _categories = List.from(kPartCategories);
 
   DateTime? _dateListed;
@@ -5164,32 +5213,51 @@ class _AddPartScreenState extends State<AddPartScreen> {
 
   void _onNameFocusChanged() {
     if (_nameFocusNode.hasFocus) return;
-    final match = _findBestMatchingPart(_nameCtrl.text);
-    if (match == null) return;
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) return;
+
+    final match = _findBestMatchingPart(name);
 
     bool filled = false;
-    setState(() {
-      if (_category == null && match.category != null) {
-        _category = match.category;
-        filled = true;
-      }
-      if (_conditionCtrl.text.isEmpty && match.partCondition != null) {
-        _conditionCtrl.text = match.partCondition!;
-        filled = true;
-      }
-      if (_pnCtrl.text.isEmpty && match.partNumber != null) {
-        _pnCtrl.text = match.partNumber!;
-        filled = true;
-      }
-    });
+    String? suggestion;
 
-    if (filled && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Prefilled from a previous entry'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+    if (match != null) {
+      // History match — prefill empty fields silently
+      setState(() {
+        if (_category == null && match.category != null) {
+          _category = match.category;
+          filled = true;
+        }
+        if (_conditionCtrl.text.isEmpty && match.partCondition != null) {
+          _conditionCtrl.text = match.partCondition!;
+          filled = true;
+        }
+        if (_pnCtrl.text.isEmpty && match.partNumber != null) {
+          _pnCtrl.text = match.partNumber!;
+          filled = true;
+        }
+        // Show suggestion from history if category wasn't already set
+        if (match.category != null) suggestion = match.category;
+        _suggestedCategory = suggestion;
+      });
+      if (filled && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Prefilled from a previous entry'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      // No history — check predefined map
+      final lower = name.toLowerCase();
+      for (final entry in kPartCategorySuggestions.entries) {
+        if (lower.contains(entry.key)) {
+          suggestion = entry.value;
+          break;
+        }
+      }
+      setState(() => _suggestedCategory = suggestion);
     }
   }
 
@@ -5330,6 +5398,22 @@ class _AddPartScreenState extends State<AddPartScreen> {
                     'Manage categories in Settings → Part Categories',
                     style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3)),
                   ),
+                  if (_suggestedCategory != null && _category != _suggestedCategory) ...[
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      onTap: () => setState(() => _category = _suggestedCategory),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.lightbulb_outline, size: 13, color: Color(0xFFE8700A)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Suggested: $_suggestedCategory — tap to apply',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFFE8700A)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   // ── Part number + Qty ─────────────────────────────────
                   Row(
