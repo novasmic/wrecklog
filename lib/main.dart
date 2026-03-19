@@ -5099,9 +5099,16 @@ class _AddPartScreenState extends State<AddPartScreen> {
   /// Generated once on initState, shown read-only to the user.
   late final String _stockId;
 
+  /// Part ID generated upfront so photos can be attached before save.
+  late final String _partId;
+
+  /// True once the part is saved — used to clean up photos on cancel.
+  bool _saved = false;
+
   @override
   void initState() {
     super.initState();
+    _partId = newId();
     _stockId = generateUniqueStockId(widget.allVehicles);
     PartCategoryStorage.load().then((cats) {
       if (mounted) setState(() => _categories = cats);
@@ -5131,6 +5138,12 @@ class _AddPartScreenState extends State<AddPartScreen> {
     _conditionCtrl.dispose();
     _saleCtrl.dispose();
     _nameFocusNode.dispose();
+    // If user cancelled without saving, clean up any photos they took
+    if (!_saved) {
+      PhotoStorage.deleteAllForOwner('part', _partId).catchError((Object e) {
+        if (kDebugMode) debugPrint('AddPartScreen: photo cleanup failed: $e');
+      });
+    }
     super.dispose();
   }
 
@@ -5232,8 +5245,9 @@ class _AddPartScreenState extends State<AddPartScreen> {
       dateListed ??= DateTime.now();
     }
 
+    _saved = true;
     final p = Part(
-      id: newId(),
+      id: _partId,
       name: _nameCtrl.text.trim(),
       state: PartState.removed, // status unchanged — user decides when to list
       createdAt: DateTime.now(),
@@ -5453,6 +5467,20 @@ class _AddPartScreenState extends State<AddPartScreen> {
                     maxLength: 2000,
                     textCapitalization: TextCapitalization.sentences,
                     textInputAction: TextInputAction.newline,
+                  ),
+
+                  divider,
+
+                  // ── Photos ────────────────────────────────────────────
+                  const Text(
+                    'Photos',
+                    style: TextStyle(fontSize: 13, color: Colors.white54, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  PhotoStrip(
+                    ownerType: 'part',
+                    ownerId: _partId,
+                    maxCount: kMaxPartPhotos,
                   ),
 
                   divider,
