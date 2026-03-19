@@ -595,6 +595,7 @@ class Part {
 
   // Part metadata
   String? partCondition;
+  String? side; // 'Left' | 'Right' | 'Pair' | null
   DateTime? dateListed;
   DateTime? dateSold;
 
@@ -622,6 +623,7 @@ class Part {
     this.vehicleUsageValue,
     this.vehicleUsageUnit,
     this.partCondition,
+    this.side,
     this.dateListed,
     this.dateSold,
     List<String>? photoIds,
@@ -630,6 +632,10 @@ class Part {
        listings = listings ?? [];
 
   bool get hasLiveListings => listings.any((l) => l.url.trim().isNotEmpty && l.isLive);
+
+  /// Normalized part number for matching/grouping — dashes and spaces removed, uppercased.
+  String? get normalizedPartNumber =>
+      partNumber == null ? null : normalizePartNumber(partNumber!);
 
   Set<String> get livePlatformNames => listings
       .where((l) => l.url.trim().isNotEmpty)
@@ -679,6 +685,7 @@ class Part {
         'vehicleUsageValue': vehicleUsageValue,
         'vehicleUsageUnit': vehicleUsageUnit,
         'partCondition': partCondition,
+        'side': side,
         'dateListed': dateListed?.toIso8601String(),
         'dateSold': dateSold?.toIso8601String(),
       };
@@ -711,6 +718,7 @@ class Part {
       vehicleUsageValue: (j['vehicleUsageValue'] as num?)?.toInt(),
       vehicleUsageUnit: j['vehicleUsageUnit'] as String?,
       partCondition: j['partCondition'] as String?,
+      side: j['side'] as String?,
       dateListed: j['dateListed'] == null ? null : DateTime.tryParse(j['dateListed'] as String),
       dateSold: j['dateSold'] == null ? null : DateTime.tryParse(j['dateSold'] as String),
     );
@@ -970,6 +978,11 @@ int _newIdCounter = 0;
 String newId() => '${DateTime.now().microsecondsSinceEpoch}_${_newIdCounter++}';
 
 String normalizeIdentifier(String input) => input.trim().toUpperCase();
+
+/// Strips dashes and spaces and uppercases — used for part number matching/grouping.
+/// The original value is always preserved for display.
+String normalizePartNumber(String pn) =>
+    pn.replaceAll(RegExp(r'[-\s]'), '').toUpperCase();
 
 Color profitColor(int plCents) => plCents >= 0 ? Colors.green : Colors.red;
 
@@ -1556,6 +1569,7 @@ String vehiclesToCsv(List<Vehicle> vehicles) {
     'part_number',
     'part_category',
     'part_condition',
+    'part_side',
     'part_state',
     'part_location',
     'qty',
@@ -1590,6 +1604,7 @@ String vehiclesToCsv(List<Vehicle> vehicles) {
         p.partNumber ?? '',
         p.category ?? '',
         p.partCondition ?? '',
+        p.side ?? '',
         p.state.name,
         p.location ?? '',
         p.qty.toString(),
@@ -3866,6 +3881,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     setState(() {
       p.state = PartState.sold;
       p.salePriceCents = cents;
+      p.dateSold ??= DateTime.now();
       for (final l in p.listings) {
         l.isLive = false;
       }
@@ -3887,6 +3903,38 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       p.state = p.hasLiveListings ? PartState.listed : PartState.removed;
       p.salePriceCents = null;
     });
+  }
+
+  void _duplicatePart(Part source) {
+    final copy = Part(
+      id: newId(),
+      name: source.name,
+      state: PartState.removed,
+      createdAt: DateTime.now(),
+      category: source.category,
+      partCondition: source.partCondition,
+      side: source.side,
+      partNumber: source.partNumber,
+      notes: source.notes,
+      location: source.location,
+      qty: source.qty,
+      stockId: generateUniqueStockId(_allVehiclesWithCurrent()),
+      vehicleMake: source.vehicleMake,
+      vehicleModel: source.vehicleModel,
+      vehicleYear: source.vehicleYear,
+      vehicleTrim: source.vehicleTrim,
+      vehicleEngine: source.vehicleEngine,
+      vehicleTransmission: source.vehicleTransmission,
+      vehicleDrivetrain: source.vehicleDrivetrain,
+      vehicleUsageValue: source.vehicleUsageValue,
+      vehicleUsageUnit: source.vehicleUsageUnit,
+      // askingPriceCents intentionally copied — useful default
+      askingPriceCents: source.askingPriceCents,
+      // sale price, dateSold, listings NOT copied
+    );
+    setState(() => _v.parts.add(copy));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Duplicated "${source.name}"')));
   }
 
   Future<void> _deleteSoldPartPhotos() async {
@@ -4030,6 +4078,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                     onMarkScrapped: () => _setScrapped(p),
                     onMarkInStock: () => _setInStock(p),
                     onOpenLinks: () => showLinksSheet(context, p),
+                    onDuplicate: () => _duplicatePart(p),
                     onAddToCommonParts: () => showAddToCommonPartsSheet(
                       context,
                       partName: p.name,
@@ -4070,6 +4119,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
         if (p.name.toLowerCase().contains(q)) return true;
         if ((p.location ?? '').toLowerCase().contains(q)) return true;
         if ((p.partNumber ?? '').toLowerCase().contains(q)) return true;
+        if (normalizePartNumber(p.partNumber ?? '').toLowerCase().contains(normalizePartNumber(q).toLowerCase())) return true;
         if ((p.notes ?? '').toLowerCase().contains(q)) return true;
         if ((p.stockId ?? '').toLowerCase().contains(q)) return true;
         return false;
@@ -4577,6 +4627,20 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
                     value: part.qty.toString(),
                   ),
 
+                if ((part.partCondition ?? '').trim().isNotEmpty)
+                  _DetailRow(
+                    icon: Icons.stars_outlined,
+                    label: 'Condition',
+                    value: part.partCondition!,
+                  ),
+
+                if (part.side != null)
+                  _DetailRow(
+                    icon: Icons.swap_horiz_outlined,
+                    label: 'Side',
+                    value: part.side!,
+                  ),
+
                 _DetailRow(
                   icon: Icons.info_outline,
                   label: 'Status',
@@ -4645,7 +4709,8 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
           ),
 
           // ── Pricing ─────────────────────────────────────────────────────
-          if (part.askingPriceCents != null || part.salePriceCents != null) ...[
+          if (part.askingPriceCents != null || part.salePriceCents != null ||
+              part.dateListed != null || part.dateSold != null) ...[
             const SizedBox(height: kPad),
             AppCard(
               child: Column(
@@ -4663,6 +4728,24 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
                       icon: Icons.check_circle_outline,
                       label: 'Sale price',
                       value: formatMoneyFromCents(part.salePriceCents!),
+                    ),
+                  if (part.dateListed != null)
+                    _DetailRow(
+                      icon: Icons.calendar_today_outlined,
+                      label: 'Date listed',
+                      value: formatDateShort(part.dateListed!),
+                    ),
+                  if (part.dateSold != null)
+                    _DetailRow(
+                      icon: Icons.event_available_outlined,
+                      label: 'Date sold',
+                      value: formatDateShort(part.dateSold!),
+                    ),
+                  if (part.daysToSell != null)
+                    _DetailRow(
+                      icon: Icons.timer_outlined,
+                      label: 'Days to sell',
+                      value: '${part.daysToSell} days',
                     ),
                 ],
               ),
@@ -4901,6 +4984,7 @@ class PartCard extends StatelessWidget {
   final VoidCallback onMarkInStock;
   final VoidCallback onOpenLinks;
   final VoidCallback? onAddToCommonParts;
+  final VoidCallback? onDuplicate;
 
   const PartCard({
     super.key,
@@ -4912,6 +4996,7 @@ class PartCard extends StatelessWidget {
     required this.onMarkInStock,
     required this.onOpenLinks,
     this.onAddToCommonParts,
+    this.onDuplicate,
   });
 
   @override
@@ -4930,6 +5015,10 @@ class PartCard extends StatelessWidget {
             : isListed
                 ? ('Listed',  Colors.green,          false)
                 : ('In Stock', Colors.white38,       false);
+
+    // ── Missing data indicator ────────────────────────────────────────────────
+    final hasMissingData = !isSold && !isScrapped &&
+        (part.category == null || part.askingPriceCents == null);
 
     // ── Left bar colour ───────────────────────────────────────────────────────
     final barColor = isScrapped
@@ -4954,6 +5043,7 @@ class PartCard extends StatelessWidget {
     } else if (!isScrapped && part.askingPriceCents != null) {
       statParts.add(formatMoneyFromCents(part.askingPriceCents!));
     }
+    if (part.side != null) statParts.add(part.side!);
     final statLine = statParts.join('  ·  ');
 
     return Opacity(
@@ -4995,16 +5085,30 @@ class PartCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      part.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                    Row(children: [
+                      Expanded(
+                        child: Text(
+                          part.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                      if (hasMissingData) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          width: 7, height: 7,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE8700A),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ]),
                     const SizedBox(height: 3),
                     Text(
                       statLine,
@@ -5037,12 +5141,13 @@ class PartCard extends StatelessWidget {
               // ── 3-dot menu ─────────────────────────────────────────────────
               PopupMenuButton<String>(
                 onSelected: (v) {
-                  if (v == 'edit')    onEdit();
-                  if (v == 'delete')  onDelete();
-                  if (v == 'sold')    onMarkSold();
-                  if (v == 'scrap')   onMarkScrapped();
-                  if (v == 'instock') onMarkInStock();
-                  if (v == 'links')   onOpenLinks();
+                  if (v == 'edit')      onEdit();
+                  if (v == 'duplicate' && onDuplicate != null) onDuplicate!();
+                  if (v == 'delete')    onDelete();
+                  if (v == 'sold')      onMarkSold();
+                  if (v == 'scrap')     onMarkScrapped();
+                  if (v == 'instock')   onMarkInStock();
+                  if (v == 'links')     onOpenLinks();
                   if (v == 'common' && onAddToCommonParts != null) onAddToCommonParts!();
                 },
                 padding: EdgeInsets.zero,
@@ -5054,6 +5159,12 @@ class PartCard extends StatelessWidget {
                     title: Text('Edit'),
                     contentPadding: EdgeInsets.zero,
                   )),
+                  if (onDuplicate != null)
+                    const PopupMenuItem(value: 'duplicate', child: ListTile(
+                      leading: Icon(Icons.copy_outlined),
+                      title: Text('Duplicate'),
+                      contentPadding: EdgeInsets.zero,
+                    )),
                   if (isSold || isScrapped)
                     const PopupMenuItem(value: 'instock', child: ListTile(
                       leading: Icon(Icons.undo),
@@ -5129,6 +5240,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
   bool _showLink = false;
   String? _category;
   String? _suggestedCategory;
+  String? _side;
   List<String> _categories = List.from(kPartCategories);
 
   DateTime? _dateListed;
@@ -5261,6 +5373,24 @@ class _AddPartScreenState extends State<AddPartScreen> {
     }
   }
 
+  /// Returns the most recently sold price (formatted) for parts with the same name.
+  String? _lastSoldHint() {
+    final name = _nameCtrl.text.trim().toLowerCase();
+    if (name.isEmpty) return null;
+    Part? best;
+    for (final v in widget.allVehicles) {
+      for (final p in v.parts) {
+        if (p.name.toLowerCase() == name &&
+            p.state == PartState.sold &&
+            p.salePriceCents != null) {
+          if (best == null || p.createdAt.isAfter(best.createdAt)) best = p;
+        }
+      }
+    }
+    if (best == null) return null;
+    return 'Last sold: ${formatMoneyFromCents(best.salePriceCents!)}';
+  }
+
   Future<void> _pickDateListed() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -5338,6 +5468,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
       vehicleUsageValue: _vUsageValue,
       vehicleUsageUnit: _vUsageUnit,
       partCondition: condition.isEmpty ? null : condition,
+      side: _side,
       dateListed: dateListed,
       dateSold: _dateSold,
     );
@@ -5352,7 +5483,34 @@ class _AddPartScreenState extends State<AddPartScreen> {
       child: Divider(color: Colors.white12, height: 1),
     );
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final nav = Navigator.of(context);
+        // If name is empty, allow exit without confirmation
+        if (_nameCtrl.text.trim().isEmpty) {
+          nav.pop();
+          return;
+        }
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Discard part?'),
+            content: const Text('You have unsaved changes. Discard them?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep editing')),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Discard'),
+              ),
+            ],
+          ),
+        );
+        if ((ok ?? false) && mounted) nav.pop();
+      },
+      child: Scaffold(
       appBar: AppBar(title: const Text('Add Part')),
       body: Form(
         key: _formKey,
@@ -5464,11 +5622,13 @@ class _AddPartScreenState extends State<AddPartScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _askCtrl,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Asking price',
                       hintText: 'Optional',
                       prefixText: '\$',
-                      prefixIcon: Icon(Icons.sell_outlined),
+                      prefixIcon: const Icon(Icons.sell_outlined),
+                      helperText: _lastSoldHint(),
+                      helperStyle: const TextStyle(color: Color(0xFFE8700A), fontSize: 12),
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     textInputAction: TextInputAction.next,
@@ -5495,6 +5655,26 @@ class _AddPartScreenState extends State<AddPartScreen> {
                     ),
                     textCapitalization: TextCapitalization.sentences,
                     textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 12),
+                  // ── Side ──────────────────────────────────────────────
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.swap_horiz_outlined, size: 16, color: Colors.white38),
+                        SizedBox(width: 6),
+                        Text('Side:', style: TextStyle(fontSize: 13, color: Colors.white54)),
+                      ]),
+                      ...['Left', 'Right', 'Pair'].map((s) => ChoiceChip(
+                        label: Text(s, style: const TextStyle(fontSize: 12)),
+                        selected: _side == s,
+                        onSelected: (v) => setState(() => _side = v ? s : null),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                      )),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -5676,7 +5856,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
           ],
         ),
       ),
-    );
+    )); // PopScope + Scaffold
   }
 }
 
@@ -5696,6 +5876,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
 
   late Part _p;
   List<String> _categories = List.from(kPartCategories);
+  String? _side;
 
   late final TextEditingController _nameCtrl;
   late final TextEditingController _locCtrl;
@@ -5730,6 +5911,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
     );
     _dateListed = _p.dateListed;
     _dateSold = _p.dateSold;
+    _side = _p.side;
   }
 
   @override
@@ -5779,9 +5961,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
     setState(() {
       _p.listings.insert(0, created);
       normalizePartStateFromListings(_p);
-      if (_dateListed == null) {
-        _dateListed = DateTime.now();
-      }
+      _dateListed ??= DateTime.now();
     });
   }
 
@@ -5845,6 +6025,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
 
     _p.dateListed = _dateListed;
     _p.dateSold = _dateSold;
+    _p.side = _side;
     _p.updatedAt = DateTime.now();
 
     normalizePartStateFromListings(_p);
@@ -5931,6 +6112,21 @@ class _EditPartDialogState extends State<EditPartDialog> {
                   hintText: 'Good / Used / Damaged',
                 ),
                 textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  const Text('Side:', style: TextStyle(fontSize: 13, color: Colors.white54)),
+                  ...['Left', 'Right', 'Pair'].map((s) => ChoiceChip(
+                    label: Text(s, style: const TextStyle(fontSize: 12)),
+                    selected: _side == s,
+                    onSelected: (v) => setState(() => _side = v ? s : null),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  )),
+                ],
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
@@ -7432,10 +7628,12 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
         if (_stateFilter != null && p.state != _stateFilter) continue;
         if (q.isEmpty) continue;
 
+        final pn = p.partNumber ?? '';
         final hay = [
           p.name,
           p.location ?? '',
-          p.partNumber ?? '',
+          pn,
+          normalizePartNumber(pn), // also match without dashes/spaces
           p.stockId ?? '',
           p.notes ?? '',
           'qty:${p.qty}',
@@ -7446,17 +7644,28 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
           v.color,
         ].join(' ').toLowerCase();
 
-        if (hay.contains(q)) newHits.add(_PartHit(vehicle: v, part: p));
+        // Also normalize the query so "ABC123" matches "ABC-123" and vice versa
+        final normalizedQ = normalizePartNumber(q).toLowerCase();
+        if (hay.contains(q) || (normalizedQ.isNotEmpty && hay.contains(normalizedQ))) {
+          newHits.add(_PartHit(vehicle: v, part: p));
+        }
       }
     }
 
     final groupMap = <String, List<_PartHit>>{};
     for (final h in newHits) {
-      final key = (h.part.partNumber ?? '').trim();
+      // Use normalized key for grouping so ABC-123 and ABC123 merge into one group.
+      final key = h.part.partNumber == null
+          ? ''
+          : normalizePartNumber(h.part.partNumber!);
       groupMap.putIfAbsent(key, () => []).add(h);
     }
     final newGroups = groupMap.entries
-        .map((e) => _PartGroup(partNumber: e.key, hits: e.value))
+        .map((e) {
+          // Display the original part number from the first hit (preserve formatting).
+          final display = e.value.first.part.partNumber ?? '';
+          return _PartGroup(partNumber: display, hits: e.value);
+        })
         .toList()
       ..sort((a, b) {
         final qCmp = b.qty.compareTo(a.qty);
@@ -9770,9 +9979,9 @@ class _PartsDataScreenState extends State<PartsDataScreen> {
     final year = e.part.vehicleYear ?? e.vehicle.year;
     final trim = e.part.vehicleTrim ?? e.vehicle.trim;
     final parts = <String>[];
-    if (make != null && make.isNotEmpty) parts.add(make);
-    if (model != null && model.isNotEmpty) parts.add(model);
-    if (year != null) parts.add(year.toString());
+    if (make.isNotEmpty) parts.add(make);
+    if (model.isNotEmpty) parts.add(model);
+    parts.add(year.toString());
     if (trim != null && trim.isNotEmpty) parts.add(trim);
     return parts.isEmpty ? 'Unknown vehicle' : parts.join(' ');
   }
