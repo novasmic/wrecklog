@@ -275,21 +275,31 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _deleteVehicle(String id) async {
-    // Clean up all photos for this vehicle and every part under it
     final vehicleIdx = _vehicles.indexWhere((x) => x.id == id);
     if (vehicleIdx < 0) return; // vehicle not found — nothing to delete
     final vehicle = _vehicles[vehicleIdx];
-    await PhotoStorage.deleteAllForOwner('vehicle', id);
-    for (final part in vehicle.parts) {
-      await PhotoStorage.deleteAllForOwner('part', part.id);
-    }
-    setState(() => _vehicles.removeWhere((x) => x.id == id));
-    await _persist();
-    // Last vehicle deleted → go back to landing immediately
-    if (_vehicles.isEmpty && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LandingScreen()),
-      );
+    try {
+      await PhotoStorage.deleteAllForOwner('vehicle', id);
+      for (final part in vehicle.parts) {
+        await PhotoStorage.deleteAllForOwner('part', part.id);
+      }
+      setState(() => _vehicles.removeWhere((x) => x.id == id));
+      await _persist();
+      // Last vehicle deleted → go back to landing immediately
+      if (_vehicles.isEmpty && mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const LandingScreen()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Delete failed. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -732,6 +742,7 @@ class Vehicle {
   String? notes;
 
   /// v1.2 placeholder fields — reserved for future features, no UI yet.
+  DateTime? createdAt;      // when this record was first created in the app
   DateTime? updatedAt;
   List<String> photoIds;    // reserved for photo feature
 
@@ -756,6 +767,7 @@ class Vehicle {
     this.usageUnit = 'km',
     this.color = '',
     this.notes,
+    this.createdAt,
     this.updatedAt,
     this.trim,
     this.engine,
@@ -802,6 +814,7 @@ class Vehicle {
         'usageUnit': usageUnit,
         'color': color,
         'notes': notes,
+        'createdAt': createdAt?.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
         'photoIds': photoIds,
         'trim': trim,
@@ -827,6 +840,7 @@ class Vehicle {
       usageUnit: (j['usageUnit'] as String?) ?? 'km',
       color: (j['color'] as String?) ?? '',
       notes: j['notes'] as String?,
+      createdAt: j['createdAt'] == null ? null : DateTime.tryParse(j['createdAt'] as String),
       updatedAt: j['updatedAt'] == null ? null : DateTime.tryParse(j['updatedAt'] as String),
       photoIds: (j['photoIds'] as List<dynamic>?)?.map((e) => e as String).toList(),
       trim: j['trim'] as String?,
@@ -1481,39 +1495,61 @@ String vehiclesToCsv(List<Vehicle> vehicles) {
     'vehicle_year',
     'vehicle_make',
     'vehicle_model',
+    'vehicle_trim',
+    'vehicle_engine',
+    'vehicle_transmission',
+    'vehicle_drivetrain',
+    'vehicle_usage',
     'vehicle_identifier',
     'vehicle_status',
     'item_type',
     'part_id',
     'part_name',
+    'part_number',
+    'part_category',
+    'part_condition',
     'part_state',
     'part_location',
-    'part_number',
     'qty',
     'asking_price',
     'sale_price',
+    'date_listed',
+    'date_sold',
+    'days_to_sell',
     'links_total',
     'links_live',
   ]);
 
   for (final v in vehicles) {
+    final usageStr = v.usageValue != null ? '${v.usageValue} ${v.usageUnit}' : '';
     for (final p in v.parts) {
+      final dts = p.daysToSell;
       rows.add([
         v.id,
         v.year.toString(),
         v.make,
         v.model,
+        v.trim ?? '',
+        v.engine ?? '',
+        v.transmission ?? '',
+        v.drivetrain ?? '',
+        usageStr,
         v.identifier ?? '',
         v.status.name,
         v.itemType.name,
         p.id,
         p.name,
+        p.partNumber ?? '',
+        p.category ?? '',
+        p.partCondition ?? '',
         p.state.name,
         p.location ?? '',
-        p.partNumber ?? '',
         p.qty.toString(),
         p.askingPriceCents == null ? '' : formatMoneyFromCents(p.askingPriceCents!),
         p.salePriceCents == null ? '' : formatMoneyFromCents(p.salePriceCents!),
+        p.dateListed == null ? '' : p.dateListed!.toIso8601String().substring(0, 10),
+        p.dateSold == null ? '' : p.dateSold!.toIso8601String().substring(0, 10),
+        dts == null ? '' : dts.toString(),
         p.totalLinksCount.toString(),
         p.liveLinksCount.toString(),
       ]);
@@ -3016,6 +3052,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
       engine: _engineCtrl.text.trim().isEmpty ? null : _engineCtrl.text.trim(),
       transmission: _transmissionCtrl.text.trim().isEmpty ? null : _transmissionCtrl.text.trim(),
       drivetrain: _drivetrainCtrl.text.trim().isEmpty ? null : _drivetrainCtrl.text.trim(),
+      createdAt: DateTime.now(),
     );
 
     await RecentModelStorage.add(_itemType, v.make, v.model);
@@ -3336,6 +3373,8 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       engine: _engineCtrl.text.trim().isEmpty ? null : _engineCtrl.text.trim(),
       transmission: _transmissionCtrl.text.trim().isEmpty ? null : _transmissionCtrl.text.trim(),
       drivetrain: _drivetrainCtrl.text.trim().isEmpty ? null : _drivetrainCtrl.text.trim(),
+      createdAt: widget.vehicle.createdAt, // preserve original creation time
+      updatedAt: DateTime.now(),
     );
 
     await RecentModelStorage.add(_itemType, updated.make, updated.model);
@@ -5694,6 +5733,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
 
     _p.dateListed = _dateListed;
     _p.dateSold = _dateSold;
+    _p.updatedAt = DateTime.now();
 
     normalizePartStateFromListings(_p);
 
@@ -8551,6 +8591,73 @@ class _SettingsTabState extends State<SettingsTab> {
             ),
           ),
 
+          // ── Parts Data ─────────────────────────────────────────────
+          const SizedBox(height: kPad),
+          AppCard(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(kRadius),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => PartsDataScreen(vehicles: widget.vehicles)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.table_rows_outlined, color: Color(0xFFE8700A)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Parts Data', style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('View and export all part records', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.white24),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Feedback ───────────────────────────────────────────────
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.feedback_outlined, color: Color(0xFFE8700A)),
+                    SizedBox(width: 10),
+                    Text('Feedback', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.bug_report_outlined, color: Colors.white54),
+                  title: const Text('Report a Bug'),
+                  onTap: () {
+                    final subject = Uri.encodeComponent('Bug Report - WreckLog v$_version');
+                    final body = Uri.encodeComponent('Describe the bug:\n\n\nSteps to reproduce:\n\n\nApp version: $_version\nPlatform: ${defaultTargetPlatform.name}');
+                    launchUrl(Uri.parse('mailto:novasmic.au@gmail.com?subject=$subject&body=$body'));
+                  },
+                ),
+                const Divider(color: Colors.white12, height: 1),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.lightbulb_outline, color: Colors.white54),
+                  title: const Text('Request a Feature'),
+                  onTap: () {
+                    final subject = Uri.encodeComponent('Feature Request - WreckLog v$_version');
+                    final body = Uri.encodeComponent('Describe the feature:\n\n\nWhy would it be useful:\n\n\nApp version: $_version\nPlatform: ${defaultTargetPlatform.name}');
+                    launchUrl(Uri.parse('mailto:novasmic.au@gmail.com?subject=$subject&body=$body'));
+                  },
+                ),
+              ],
+            ),
+          ),
+
           const SizedBox(height: 16),
 
           // ── App info ───────────────────────────────────────────────
@@ -9434,6 +9541,442 @@ class _InfoRow extends StatelessWidget {
                 fontSize: 13,
                 fontWeight: FontWeight.w600)),
       ],
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PartsDataScreen
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Flat record pairing a [Part] with its parent [Vehicle].
+class _PartEntry {
+  final Part part;
+  final Vehicle vehicle;
+  const _PartEntry({required this.part, required this.vehicle});
+}
+
+enum _PartsDataFilter { all, unsold, sold }
+
+enum _PartsDataSort { dateListed, dateSold, salePrice, daysToSell }
+
+class PartsDataScreen extends StatefulWidget {
+  final List<Vehicle> vehicles;
+  const PartsDataScreen({super.key, required this.vehicles});
+
+  @override
+  State<PartsDataScreen> createState() => _PartsDataScreenState();
+}
+
+class _PartsDataScreenState extends State<PartsDataScreen> {
+  final _searchCtrl = TextEditingController();
+  final _grainPainter = LeatherGrainPainter();
+  String _query = '';
+  _PartsDataFilter _filter = _PartsDataFilter.all;
+  _PartsDataSort _sort = _PartsDataSort.dateListed;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── Build flat list ──────────────────────────────────────────────
+  List<_PartEntry> get _entries {
+    final all = <_PartEntry>[];
+    for (final v in widget.vehicles) {
+      for (final p in v.parts) {
+        all.add(_PartEntry(part: p, vehicle: v));
+      }
+    }
+
+    // Filter by state
+    final filtered = all.where((e) {
+      switch (_filter) {
+        case _PartsDataFilter.all:
+          return true;
+        case _PartsDataFilter.unsold:
+          return e.part.state != PartState.sold &&
+              e.part.state != PartState.scrapped;
+        case _PartsDataFilter.sold:
+          return e.part.state == PartState.sold;
+      }
+    }).toList();
+
+    // Filter by search query
+    final q = _query.trim().toLowerCase();
+    final searched = q.isEmpty
+        ? filtered
+        : filtered
+            .where((e) => e.part.name.toLowerCase().contains(q))
+            .toList();
+
+    // Sort
+    searched.sort((a, b) {
+      switch (_sort) {
+        case _PartsDataSort.dateListed:
+          final ad = a.part.dateListed;
+          final bd = b.part.dateListed;
+          if (ad == null && bd == null) return 0;
+          if (ad == null) return 1;
+          if (bd == null) return -1;
+          return bd.compareTo(ad); // newest first
+
+        case _PartsDataSort.dateSold:
+          final ad = a.part.dateSold;
+          final bd = b.part.dateSold;
+          if (ad == null && bd == null) return 0;
+          if (ad == null) return 1;
+          if (bd == null) return -1;
+          return bd.compareTo(ad); // newest first
+
+        case _PartsDataSort.salePrice:
+          final ap = a.part.salePriceCents;
+          final bp = b.part.salePriceCents;
+          if (ap == null && bp == null) return 0;
+          if (ap == null) return 1;
+          if (bp == null) return -1;
+          return bp.compareTo(ap); // highest first
+
+        case _PartsDataSort.daysToSell:
+          final ad = a.part.daysToSell;
+          final bd = b.part.daysToSell;
+          if (ad == null && bd == null) return 0;
+          if (ad == null) return 1;
+          if (bd == null) return -1;
+          return ad.compareTo(bd); // lowest first
+      }
+    });
+
+    return searched;
+  }
+
+  // ── Vehicle label for a part ─────────────────────────────────────
+  String _vehicleLabel(_PartEntry e) {
+    final make = e.part.vehicleMake ?? e.vehicle.make;
+    final model = e.part.vehicleModel ?? e.vehicle.model;
+    final year = e.part.vehicleYear ?? e.vehicle.year;
+    final trim = e.part.vehicleTrim ?? e.vehicle.trim;
+    final parts = <String>[];
+    if (make != null && make.isNotEmpty) parts.add(make);
+    if (model != null && model.isNotEmpty) parts.add(model);
+    if (year != null) parts.add(year.toString());
+    if (trim != null && trim.isNotEmpty) parts.add(trim);
+    return parts.isEmpty ? 'Unknown vehicle' : parts.join(' ');
+  }
+
+  // ── Export ───────────────────────────────────────────────────────
+  Future<void> _exportJson(BuildContext context) async {
+    try {
+      final content = await vehiclesToPrettyJson(widget.vehicles);
+      if (kIsWeb) {
+        downloadTextFileWeb(filename: 'wrecklog_parts_export.json', content: content);
+        return;
+      }
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.macOS ||
+              defaultTargetPlatform == TargetPlatform.linux)) {
+        final savePath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Parts Data (JSON)',
+          fileName: 'wrecklog_parts_export.json',
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+        );
+        if (savePath == null) return;
+        await File(savePath).writeAsString(content);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Saved to $savePath'), backgroundColor: Colors.green),
+          );
+        }
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/wrecklog_parts_export.json');
+      await file.writeAsString(content);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        subject: 'WreckLog Parts Export',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Export failed.'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportCsv(BuildContext context) async {
+    try {
+      final content = vehiclesToCsv(widget.vehicles);
+      if (kIsWeb) {
+        downloadTextFileWeb(filename: 'wrecklog_parts_export.csv', content: content);
+        return;
+      }
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.macOS ||
+              defaultTargetPlatform == TargetPlatform.linux)) {
+        final savePath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Parts Data (CSV)',
+          fileName: 'wrecklog_parts_export.csv',
+          type: FileType.custom,
+          allowedExtensions: ['csv'],
+        );
+        if (savePath == null) return;
+        await File(savePath).writeAsString(content);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Saved to $savePath'), backgroundColor: Colors.green),
+          );
+        }
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/wrecklog_parts_export.csv');
+      await file.writeAsString(content);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        subject: 'WreckLog Parts Export',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Export failed.'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // ── Build ────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    final entries = _entries;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Parts Data'),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.ios_share_outlined),
+            tooltip: 'Export',
+            onSelected: (value) {
+              if (value == 'json') _exportJson(context);
+              if (value == 'csv') _exportCsv(context);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'json', child: Text('Export JSON')),
+              PopupMenuItem(value: 'csv', child: Text('Export CSV')),
+            ],
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          SizedBox.expand(child: CustomPaint(painter: _grainPainter)),
+          Column(
+            children: [
+              // ── Search bar ──────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 0),
+                child: TextField(
+                  controller: _searchCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Search parts…',
+                    prefixIcon: const Icon(Icons.search, color: Colors.white38),
+                    suffixIcon: _query.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.white38),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _query = '');
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (v) => setState(() => _query = v),
+                ),
+              ),
+
+              // ── Filter chips ────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(kPad, 8, kPad, 0),
+                child: Row(
+                  children: [
+                    _filterChip('All', _PartsDataFilter.all),
+                    const SizedBox(width: 8),
+                    _filterChip('Unsold', _PartsDataFilter.unsold),
+                    const SizedBox(width: 8),
+                    _filterChip('Sold', _PartsDataFilter.sold),
+                    const Spacer(),
+                    // ── Sort dropdown ──────────────────────────
+                    DropdownButton<_PartsDataSort>(
+                      value: _sort,
+                      underline: const SizedBox(),
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      dropdownColor: const Color(0xFF1E1E1E),
+                      icon: const Icon(Icons.sort, color: Colors.white38, size: 18),
+                      items: const [
+                        DropdownMenuItem(
+                          value: _PartsDataSort.dateListed,
+                          child: Text('Date Listed'),
+                        ),
+                        DropdownMenuItem(
+                          value: _PartsDataSort.dateSold,
+                          child: Text('Date Sold'),
+                        ),
+                        DropdownMenuItem(
+                          value: _PartsDataSort.salePrice,
+                          child: Text('Sale Price'),
+                        ),
+                        DropdownMenuItem(
+                          value: _PartsDataSort.daysToSell,
+                          child: Text('Days to Sell'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setState(() => _sort = v);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── List ────────────────────────────────────────────
+              Expanded(
+                child: entries.isEmpty
+                    ? Center(
+                        child: Text(
+                          _query.isNotEmpty ? 'No parts match your search.' : 'No parts found.',
+                          style: const TextStyle(color: Colors.white38),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 32),
+                        itemCount: entries.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final e = entries[index];
+                          final p = e.part;
+                          final askStr = p.askingPriceCents != null
+                              ? formatMoneyFromCents(p.askingPriceCents!)
+                              : '—';
+                          final saleStr = p.salePriceCents != null
+                              ? formatMoneyFromCents(p.salePriceCents!)
+                              : '—';
+                          final listedStr = p.dateListed != null
+                              ? formatDateShort(p.dateListed!)
+                              : '—';
+                          final soldStr = p.dateSold != null
+                              ? formatDateShort(p.dateSold!)
+                              : '—';
+                          final dtsStr = p.daysToSell != null
+                              ? '${p.daysToSell} day${p.daysToSell == 1 ? '' : 's'}'
+                              : '—';
+
+                          return AppCard(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Line 1: name + part number
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        p.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (p.partNumber != null && p.partNumber!.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        p.partNumber!,
+                                        style: const TextStyle(
+                                          color: Colors.white54,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+
+                                const SizedBox(height: 3),
+
+                                // Line 2: vehicle
+                                Text(
+                                  _vehicleLabel(e),
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+
+                                const SizedBox(height: 4),
+
+                                // Line 3: prices
+                                Text(
+                                  'Listed: $askStr  →  Sold: $saleStr',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 2),
+
+                                // Line 4: dates + days to sell
+                                Text(
+                                  'Date listed: $listedStr  |  Date sold: $soldStr  |  Days to sell: $dtsStr',
+                                  style: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 11,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String label, _PartsDataFilter value) {
+    final selected = _filter == value;
+    return GestureDetector(
+      onTap: () => setState(() => _filter = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFE8700A) : Colors.white10,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : Colors.white54,
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
     );
   }
 }
