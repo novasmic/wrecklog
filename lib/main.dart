@@ -29,15 +29,19 @@ const double kRadius = 16;
 const List<String> kPartCategories = [
   'Engine',
   'Transmission',
-  'Body & Panels',
-  'Interior',
+  'Driveline',
+  'Suspension',
+  'Steering',
+  'Brakes',
   'Electrical',
-  'Suspension & Brakes',
+  'Lighting',
   'Cooling',
-  'Exhaust',
   'Fuel System',
-  'Glass',
+  'Exhaust',
+  'Body',
+  'Interior',
   'Wheels & Tyres',
+  'Accessories',
   'Other',
 ];
 
@@ -1039,48 +1043,74 @@ const int kFreePartLimitPerVehicle = 5;
 /// Keys are lowercase. Checked via String.contains so "headlight" matches "headlight assembly".
 const Map<String, String> kPartCategorySuggestions = {
   // Engine
-  'engine': 'Engine', 'motor': 'Engine', 'block': 'Engine', 'head': 'Engine',
+  'engine': 'Engine', 'motor': 'Engine', 'long motor': 'Engine', 'short motor': 'Engine',
+  'block': 'Engine', 'cylinder head': 'Engine', 'rocker cover': 'Engine',
   'cam': 'Engine', 'camshaft': 'Engine', 'crankshaft': 'Engine', 'piston': 'Engine',
-  'valve': 'Engine', 'timing': 'Engine', 'injector': 'Engine', 'turbo': 'Engine',
-  'supercharger': 'Engine', 'intercooler': 'Engine', 'oil pump': 'Engine',
+  'timing': 'Engine', 'injector': 'Engine', 'turbo': 'Engine', 'supercharger': 'Engine',
+  'oil pump': 'Engine', 'throttle body': 'Engine', 'intake manifold': 'Engine',
+  'egr': 'Engine',
   // Transmission
-  'gearbox': 'Transmission', 'transmission': 'Transmission', 'diff': 'Transmission',
-  'differential': 'Transmission', 'transfer case': 'Transmission', 'clutch': 'Transmission',
-  'torque converter': 'Transmission', 'driveshaft': 'Transmission', 'cv joint': 'Transmission',
-  'axle': 'Transmission',
-  // Electrical
-  'alternator': 'Electrical', 'starter': 'Electrical', 'battery': 'Electrical',
-  'ecu': 'Electrical', 'fuse': 'Electrical', 'wiring': 'Electrical',
-  'sensor': 'Electrical', 'relay': 'Electrical', 'module': 'Electrical',
-  'computer': 'Electrical', 'switch': 'Electrical',
-  // Lighting
-  'headlight': 'Lighting', 'taillight': 'Lighting', 'indicator': 'Lighting',
-  'light': 'Lighting', 'lamp': 'Lighting', 'foglight': 'Lighting',
-  // Body
-  'door': 'Body', 'bonnet': 'Body', 'hood': 'Body', 'fender': 'Body',
-  'bumper': 'Body', 'guard': 'Body', 'panel': 'Body', 'boot': 'Body',
-  'trunk': 'Body', 'mirror': 'Body', 'glass': 'Body', 'windscreen': 'Body',
-  'window': 'Body', 'roof': 'Body',
-  // Interior
-  'seat': 'Interior', 'dash': 'Interior', 'dashboard': 'Interior',
-  'carpet': 'Interior', 'console': 'Interior', 'trim': 'Interior',
-  'airbag': 'Interior', 'seatbelt': 'Interior', 'steering wheel': 'Interior',
+  'gearbox': 'Transmission', 'transmission': 'Transmission', 'clutch': 'Transmission',
+  'torque converter': 'Transmission', 'flywheel': 'Transmission',
+  'gear selector': 'Transmission', 'mechatronics': 'Transmission', 'valve body': 'Transmission',
+  'transmission cooler': 'Transmission',
+  // Driveline
+  'diff': 'Driveline', 'differential': 'Driveline', 'transfer case': 'Driveline',
+  'tailshaft': 'Driveline', 'driveshaft': 'Driveline', 'drive shaft': 'Driveline',
+  'cv shaft': 'Driveline', 'cv joint': 'Driveline', 'axle': 'Driveline',
+  'prop shaft': 'Driveline', 'wheel hub': 'Driveline',
   // Suspension
   'strut': 'Suspension', 'shock': 'Suspension', 'spring': 'Suspension',
-  'control arm': 'Suspension', 'tie rod': 'Suspension', 'ball joint': 'Suspension',
-  'sway bar': 'Suspension', 'hub': 'Suspension', 'knuckle': 'Suspension',
+  'control arm': 'Suspension', 'sway bar': 'Suspension', 'leaf spring': 'Suspension',
+  'upper arm': 'Suspension', 'lower arm': 'Suspension', 'link': 'Suspension',
+  'bush': 'Suspension',
+  // Steering
+  'steering rack': 'Steering', 'power steering': 'Steering', 'steering column': 'Steering',
+  'tie rod': 'Steering', 'steering knuckle': 'Steering', 'steering pump': 'Steering',
   // Brakes
   'brake': 'Brakes', 'caliper': 'Brakes', 'rotor': 'Brakes',
   'disc': 'Brakes', 'pad': 'Brakes', 'drum': 'Brakes', 'abs': 'Brakes',
+  'brake booster': 'Brakes', 'master cylinder': 'Brakes', 'handbrake': 'Brakes',
+  // Electrical
+  'alternator': 'Electrical', 'starter': 'Electrical', 'battery': 'Electrical',
+  'ecu': 'Electrical', 'pcm': 'Electrical', 'bcm': 'Electrical',
+  'fuse': 'Electrical', 'wiring': 'Electrical', 'sensor': 'Electrical',
+  'relay': 'Electrical', 'module': 'Electrical', 'computer': 'Electrical',
+  'switch': 'Electrical', 'window motor': 'Electrical', 'instrument cluster': 'Electrical',
+  // Lighting
+  'headlight': 'Lighting', 'tail light': 'Lighting', 'taillight': 'Lighting',
+  'indicator': 'Lighting', 'fog light': 'Lighting', 'foglight': 'Lighting',
+  'led bar': 'Lighting', 'light bar': 'Lighting', 'brake light': 'Lighting',
+  'interior light': 'Lighting', 'lamp': 'Lighting',
   // Cooling
-  'radiator': 'Cooling', 'thermostat': 'Cooling', 'water pump': 'Cooling',
-  'coolant': 'Cooling', 'fan': 'Cooling',
+  'radiator': 'Cooling', 'intercooler': 'Cooling', 'thermostat': 'Cooling',
+  'water pump': 'Cooling', 'cooling fan': 'Cooling', 'thermo fan': 'Cooling',
+  'overflow bottle': 'Cooling', 'heater core': 'Cooling', 'condenser': 'Cooling',
+  // Fuel System
+  'fuel pump': 'Fuel System', 'fuel tank': 'Fuel System', 'fuel rail': 'Fuel System',
+  'fuel line': 'Fuel System', 'lift pump': 'Fuel System',
+  'carburetor': 'Fuel System', 'carby': 'Fuel System',
   // Exhaust
   'exhaust': 'Exhaust', 'muffler': 'Exhaust', 'catalytic': 'Exhaust',
-  'manifold': 'Exhaust', 'downpipe': 'Exhaust',
-  // Fuel
-  'fuel pump': 'Fuel', 'fuel tank': 'Fuel', 'fuel rail': 'Fuel',
-  'carburetor': 'Fuel', 'carby': 'Fuel',
+  'exhaust manifold': 'Exhaust', 'downpipe': 'Exhaust', 'dpf': 'Exhaust',
+  // Body
+  'door': 'Body', 'bonnet': 'Body', 'hood': 'Body', 'fender': 'Body',
+  'bumper': 'Body', 'guard': 'Body', 'tailgate': 'Body', 'grille': 'Body',
+  'mirror': 'Body', 'glass': 'Body', 'windscreen': 'Body', 'window glass': 'Body',
+  'roof': 'Body',
+  // Interior
+  'seat': 'Interior', 'dash': 'Interior', 'dashboard': 'Interior',
+  'carpet': 'Interior', 'console': 'Interior', 'door trim': 'Interior',
+  'seatbelt': 'Interior', 'steering wheel': 'Interior', 'infotainment': 'Interior',
+  'centre console': 'Interior',
+  // Wheels & Tyres
+  'wheel': 'Wheels & Tyres', 'rim': 'Wheels & Tyres', 'tyre': 'Wheels & Tyres',
+  'tire': 'Wheels & Tyres', 'spare wheel': 'Wheels & Tyres', 'wheel nut': 'Wheels & Tyres',
+  // Accessories
+  'bullbar': 'Accessories', 'bull bar': 'Accessories', 'tow bar': 'Accessories',
+  'towbar': 'Accessories', 'snorkel': 'Accessories', 'side step': 'Accessories',
+  'roof rack': 'Accessories', 'canopy': 'Accessories', 'tray': 'Accessories',
+  'spotlight': 'Accessories', 'uhf': 'Accessories', 'brake controller': 'Accessories',
 };
 
 // Debug-only Pro override — compiled out in release builds.
@@ -1645,35 +1675,68 @@ void downloadTextFileWeb({required String filename, required String content}) {
 Map<ItemType, Map<String, List<String>>> defaultGroupedPresets = {
   ItemType.car: {
     'Engine': [
-      'Engine', 'Gearbox', 'Transfer case', 'Turbo', 'Intercooler',
-      'Starter motor', 'Alternator', 'AC compressor', 'Radiator',
+      'Engine complete', 'Long motor', 'Short motor', 'Turbo',
+      'Injectors', 'Fuel pump (high pressure)', 'Intake manifold',
+      'Throttle body', 'EGR valve', 'Oil pump', 'Rocker cover',
+      'Cylinder head', 'Timing components',
+    ],
+    'Transmission': [
+      'Gearbox', 'Torque converter', 'Clutch kit', 'Flywheel',
+      'Gear selector', 'Transmission cooler', 'Mechatronics / valve body',
     ],
     'Driveline': [
-      'Diff (Front)', 'Diff (Rear)', 'Wheels (set)',
-      'Drive shaft (Front)', 'Drive shaft (Rear)',
-    ],
-    'Body': [
-      'Tailgate', 'Bonnet', 'Front bar', 'Rear bar',
-      'Door (Front LH)', 'Door (Front RH)', 'Door (Rear LH)', 'Door (Rear RH)',
-      'Guard (Front LH)', 'Guard (Front RH)',
-    ],
-    'Electrical': [
-      'ECU', 'BCM', 'Instrument cluster',
-      'Headlight (LH)', 'Headlight (RH)',
-      'Tail light (LH)', 'Tail light (RH)',
-      'Wiring loom',
-    ],
-    'Interior': [
-      'Seat (Driver)', 'Seat (Passenger)', 'Rear seat',
-      'Dashboard', 'Centre console', 'Carpet set',
+      'Differential (front)', 'Differential (rear)', 'Transfer case',
+      'Tailshaft', 'CV shafts', 'Drive shafts', 'Axles',
+      'Wheel hubs', 'Prop shaft',
     ],
     'Suspension': [
-      'Strut (Front LH)', 'Strut (Front RH)',
-      'Shock (Rear LH)', 'Shock (Rear RH)',
-      'Control arm (LH)', 'Control arm (RH)',
+      'Control arms', 'Shocks / struts', 'Springs', 'Sway bar',
+      'Links / bushes', 'Leaf springs', 'Upper arms', 'Lower arms',
     ],
-    'Cooling': ['Radiator', 'Intercooler', 'Overflow bottle', 'Thermo fan'],
-    'Other': ['Fuel tank', 'Spare wheel', 'Towbar', 'Roof rack'],
+    'Steering': [
+      'Steering rack', 'Power steering pump', 'Steering column',
+      'Tie rods', 'Steering knuckle',
+    ],
+    'Brakes': [
+      'Brake calipers', 'Brake discs / rotors', 'Brake pads',
+      'ABS module', 'Brake booster', 'Master cylinder', 'Handbrake components',
+    ],
+    'Electrical': [
+      'Alternator', 'Starter motor', 'Wiring loom', 'ECU / PCM', 'BCM',
+      'Sensors', 'Relays', 'Fuse box', 'Instrument cluster',
+      'Window motors', 'Switches',
+    ],
+    'Lighting': [
+      'Headlights', 'Tail lights', 'Indicators', 'Fog lights',
+      'LED light bars', 'Interior lights', 'Brake lights',
+    ],
+    'Cooling': [
+      'Radiator', 'Intercooler', 'Cooling fan', 'Thermostat housing',
+      'Overflow bottle', 'Heater core', 'Condenser',
+    ],
+    'Fuel System': [
+      'Fuel tank', 'Lift pump', 'Fuel lines', 'Fuel rail', 'Injectors',
+    ],
+    'Exhaust': [
+      'Exhaust system', 'Muffler', 'DPF', 'Catalytic converter', 'Exhaust manifold',
+    ],
+    'Body': [
+      'Doors', 'Bonnet', 'Guards / fenders', 'Tailgate', 'Bumper',
+      'Grille', 'Mirrors', 'Window glass',
+    ],
+    'Interior': [
+      'Seats', 'Dash', 'Centre console', 'Door trims', 'Carpet',
+      'Seatbelts', 'Steering wheel', 'Infotainment screen', 'Interior switches',
+    ],
+    'Wheels & Tyres': [
+      'Wheels / rims', 'Tyres', 'Spare wheel', 'Wheel nuts',
+    ],
+    'Accessories': [
+      'Bullbar', 'Tow bar', 'Snorkel', 'Side steps', 'Roof rack',
+      'Canopy', 'Tray', 'Spotlights', 'UHF radios', 'Brake controller',
+      'Aftermarket add-ons',
+    ],
+    'Other': ['Misc parts'],
   },
   ItemType.motorcycle: {
     'Engine': ['Engine', 'Gearbox', 'Exhaust', 'Starter motor', 'Alternator'],
@@ -1733,7 +1796,7 @@ class PresetGroupStorage {
   // On first load after an upgrade, old per-type prefs are wiped and replaced
   // with fresh defaults — protecting against stale data from old builds.
   static const String _versionKey = 'preset_groups_schema_v';
-  static const int _currentVersion = 2;
+  static const int _currentVersion = 3;
 
   /// One-time migration for the old broken-key-generation bug.
   ///
