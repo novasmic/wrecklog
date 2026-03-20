@@ -1118,21 +1118,18 @@ const Map<String, String> kPartCategorySuggestions = {
 const String _kDebugProKey = 'debug_pro_enabled';
 bool _debugProOverride = false; // in-memory mirror; loaded once at startup
 
-/// In debug builds: true if billing says Pro OR debug toggle is on.
-/// In release builds: only billing (debug flag is never set).
+/// True if billing says Pro OR the local testing override is on.
 bool get isPro {
-  if (kDebugMode && _debugProOverride) return true;
+  if (_debugProOverride) return true;
   return billing.isPro;
 }
 
 Future<void> _loadDebugProFlag() async {
-  if (!kDebugMode) return;
   final prefs = await SharedPreferences.getInstance();
   _debugProOverride = prefs.getBool(_kDebugProKey) ?? false;
 }
 
 Future<void> _saveDebugProFlag(bool value) async {
-  if (!kDebugMode) return;
   _debugProOverride = value;
   final prefs = await SharedPreferences.getInstance();
   await prefs.setBool(_kDebugProKey, value);
@@ -3251,28 +3248,28 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _trimCtrl,
-                    decoration: const InputDecoration(labelText: 'Trim (optional)'),
+                    decoration: const InputDecoration(labelText: 'Trim (optional)', hintText: 'e.g. SR5 / Sport / Limited'),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _engineCtrl,
-                    decoration: const InputDecoration(labelText: 'Engine (optional)'),
+                    decoration: const InputDecoration(labelText: 'Engine (optional)', hintText: 'e.g. 2.0L 4cyl / 3.5L V6 / 2JZ-GE'),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _transmissionCtrl,
-                    decoration: const InputDecoration(labelText: 'Transmission (optional)'),
+                    decoration: const InputDecoration(labelText: 'Transmission (optional)', hintText: 'e.g. Auto / Manual / CVT'),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _drivetrainCtrl,
-                    decoration: const InputDecoration(labelText: 'Drivetrain (optional)'),
+                    decoration: const InputDecoration(labelText: 'Drivetrain (optional)', hintText: 'e.g. FWD / RWD / AWD / 4WD'),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
                   ),
@@ -3572,28 +3569,28 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _trimCtrl,
-                    decoration: const InputDecoration(labelText: 'Trim (optional)'),
+                    decoration: const InputDecoration(labelText: 'Trim (optional)', hintText: 'e.g. SR5 / Sport / Limited'),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _engineCtrl,
-                    decoration: const InputDecoration(labelText: 'Engine (optional)'),
+                    decoration: const InputDecoration(labelText: 'Engine (optional)', hintText: 'e.g. 2.0L 4cyl / 3.5L V6 / 2JZ-GE'),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _transmissionCtrl,
-                    decoration: const InputDecoration(labelText: 'Transmission (optional)'),
+                    decoration: const InputDecoration(labelText: 'Transmission (optional)', hintText: 'e.g. Auto / Manual / CVT'),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _drivetrainCtrl,
-                    decoration: const InputDecoration(labelText: 'Drivetrain (optional)'),
+                    decoration: const InputDecoration(labelText: 'Drivetrain (optional)', hintText: 'e.g. FWD / RWD / AWD / 4WD'),
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
                   ),
@@ -5600,6 +5597,39 @@ class _AddPartScreenState extends State<AddPartScreen> {
                     inputFormatters: [LengthLimitingTextInputFormatter(150)],
                   ),
                   const SizedBox(height: 12),
+                  // ── Part number + Qty ─────────────────────────────────
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _pnCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Part number',
+                            hintText: 'Optional',
+                            prefixIcon: Icon(Icons.confirmation_number_outlined),
+                          ),
+                          textInputAction: TextInputAction.next,
+                          inputFormatters: [LengthLimitingTextInputFormatter(100)],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 90,
+                        child: TextFormField(
+                          controller: _qtyCtrl,
+                          decoration: const InputDecoration(labelText: 'Qty'),
+                          keyboardType: TextInputType.number,
+                          validator: (v) {
+                            final n = int.tryParse((v ?? '').trim());
+                            if (n == null || n < 1) return 'Min 1';
+                            return null;
+                          },
+                          textInputAction: TextInputAction.next,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   // ── Category ──────────────────────────────────────────
                   DropdownButtonFormField<String>(
                     initialValue: _categories.contains(_category) ? _category : null,
@@ -5635,39 +5665,6 @@ class _AddPartScreenState extends State<AddPartScreen> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  // ── Part number + Qty ─────────────────────────────────
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _pnCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Part number',
-                            hintText: 'Optional',
-                            prefixIcon: Icon(Icons.confirmation_number_outlined),
-                          ),
-                          textInputAction: TextInputAction.next,
-                          inputFormatters: [LengthLimitingTextInputFormatter(100)],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 90,
-                        child: TextFormField(
-                          controller: _qtyCtrl,
-                          decoration: const InputDecoration(labelText: 'Qty'),
-                          keyboardType: TextInputType.number,
-                          validator: (v) {
-                            final n = int.tryParse((v ?? '').trim());
-                            if (n == null || n < 1) return 'Min 1';
-                            return null;
-                          },
-                          textInputAction: TextInputAction.next,
-                        ),
-                      ),
-                    ],
-                  ),
 
                   divider,
 
@@ -8768,6 +8765,7 @@ class SettingsTab extends StatefulWidget {
 
 class _SettingsTabState extends State<SettingsTab> {
   String _version = '';
+  bool _showDevToggle = false;
   final _grainPainter = LeatherGrainPainter();
 
   @override
@@ -8849,8 +8847,8 @@ class _SettingsTabState extends State<SettingsTab> {
             ),
           ),
 
-          // ── Debug Pro Toggle (debug builds only) ─────────────────
-          if (kDebugMode) ...[
+          // ── Dev Pro Toggle (revealed by long-pressing version) ────
+          if (_showDevToggle) ...[
             const SizedBox(height: kPad),
             AppCard(
               child: Column(
@@ -8865,11 +8863,11 @@ class _SettingsTabState extends State<SettingsTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Debug: Enable Pro',
+                              'Testing: Force Pro',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                             Text(
-                              'Bypasses Free limits. Debug builds only — not visible in release.',
+                              'Bypasses free limits for testing. Long-press version to hide.',
                               style: TextStyle(color: Colors.white38, fontSize: 12),
                             ),
                           ],
@@ -9061,7 +9059,10 @@ class _SettingsTabState extends State<SettingsTab> {
                 const SizedBox(height: 12),
                 const _InfoRow(label: 'App', value: 'WreckLog'),
                 const SizedBox(height: 6),
-                _InfoRow(label: 'Version', value: _version.isEmpty ? '…' : _version),
+                GestureDetector(
+                  onLongPress: () => setState(() => _showDevToggle = !_showDevToggle),
+                  child: _InfoRow(label: 'Version', value: _version.isEmpty ? '…' : _version),
+                ),
                 const SizedBox(height: 6),
                 const _InfoRow(label: 'Build', value: 'Release 1'),
               ],
