@@ -1373,14 +1373,17 @@ String _partSourceLine(Vehicle? vehicle) {
   return 'From: $yearStr • ${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}';
 }
 
-/// "WL-XXXXXX • PN123" secondary line — omits missing parts gracefully.
+/// "WL-XXXXXX • PN123 • Left" secondary line — omits missing parts gracefully.
 String _partSecondaryLine(Part p) {
-  final sid = (p.stockId ?? '').trim();
-  final pn  = (p.partNumber ?? '').trim();
-  if (sid.isEmpty && pn.isEmpty) return '';
-  if (sid.isEmpty) return pn;
-  if (pn.isEmpty)  return sid;
-  return '$sid • $pn';
+  final sid  = (p.stockId ?? '').trim();
+  final pn   = (p.partNumber ?? '').trim();
+  final side = (p.side ?? '').trim();
+  final parts = [
+    if (sid.isNotEmpty) sid,
+    if (pn.isNotEmpty) pn,
+    if (side.isNotEmpty) side,
+  ];
+  return parts.join(' • ');
 }
 
 String _titleOrFallback(Vehicle v) {
@@ -4974,6 +4977,16 @@ class _PartGroup {
         ? first
         : 'Multiple';
   }
+
+  /// Consistent side across all hits, or empty string if mixed/unset.
+  String get commonSide {
+    if (hits.isEmpty) return '';
+    final first = hits.first.part.side ?? '';
+    if (first.isEmpty) return '';
+    return hits.every((h) => (h.part.side ?? '') == first) ? first : '';
+  }
+
+  int get maxScore => hits.fold(0, (s, h) => h.score > s ? h.score : s);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -7683,32 +7696,51 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
   void _recompute() {
     final q = _qCtrl.text.trim().toLowerCase();
     final newHits = <_PartHit>[];
+
+    // Split into words — all words must match somewhere (AND logic).
+    final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+
     for (final v in widget.vehicles) {
       for (final p in v.parts) {
         if (_stateFilter != null && p.state != _stateFilter) continue;
-        if (q.isEmpty) continue;
+        if (words.isEmpty) continue;
 
         final pn = p.partNumber ?? '';
-        final hay = [
-          p.name,
-          p.location ?? '',
-          pn,
-          normalizePartNumber(pn), // also match without dashes/spaces
+        final nameHay    = p.name.toLowerCase();
+        final vehicleHay = [
+          v.make, v.model, v.year.toString(),
+          v.trim ?? '', v.engine ?? '', v.transmission ?? '', v.drivetrain ?? '',
+          v.identifier ?? '', v.color,
+        ].join(' ').toLowerCase();
+        final fullHay = [
+          nameHay,
+          pn.toLowerCase(),
+          normalizePartNumber(pn).toLowerCase(),
           p.stockId ?? '',
           p.notes ?? '',
-          'qty:${p.qty}',
-          v.make,
-          v.model,
-          v.year.toString(),
-          v.identifier ?? '',
-          v.color,
-        ].join(' ').toLowerCase();
+          p.location ?? '',
+          vehicleHay,
+        ].join(' ');
 
-        // Also normalize the query so "ABC123" matches "ABC-123" and vice versa
-        final normalizedQ = normalizePartNumber(q).toLowerCase();
-        if (hay.contains(q) || (normalizedQ.isNotEmpty && hay.contains(normalizedQ))) {
-          newHits.add(_PartHit(vehicle: v, part: p));
+        // All words must appear somewhere in the full haystack.
+        final allMatch = words.every((w) {
+          final nw = normalizePartNumber(w).toLowerCase();
+          return fullHay.contains(w) || (nw.isNotEmpty && fullHay.contains(nw));
+        });
+        if (!allMatch) continue;
+
+        // Score: higher = more relevant.
+        final int score;
+        final nameAndVehicle = '$nameHay $vehicleHay';
+        if (words.every((w) => nameHay.contains(w))) {
+          score = 3; // all words in part name
+        } else if (words.every((w) => nameAndVehicle.contains(w))) {
+          score = 2; // all words in name + vehicle fields
+        } else {
+          score = 1; // all words somewhere (notes, location, part number, etc.)
         }
+
+        newHits.add(_PartHit(vehicle: v, part: p, score: score));
       }
     }
 
@@ -7722,12 +7754,14 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
     }
     final newGroups = groupMap.entries
         .map((e) {
-          // Display the original part number from the first hit (preserve formatting).
           final display = e.value.first.part.partNumber ?? '';
           return _PartGroup(partNumber: display, hits: e.value);
         })
         .toList()
       ..sort((a, b) {
+        // Sort by relevance first, then qty, then part number.
+        final sCmp = b.maxScore.compareTo(a.maxScore);
+        if (sCmp != 0) return sCmp;
         final qCmp = b.qty.compareTo(a.qty);
         if (qCmp != 0) return qCmp;
         if (a.partNumber.isEmpty && b.partNumber.isNotEmpty) return 1;
@@ -7760,14 +7794,14 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
               children: [
                 const SectionTitle(
                   title: 'Search',
-                  subtitle: 'Search by name, location, part number, stock ID, notes, vehicle, year, identifier.',
+                  subtitle: 'Search across part name, number, notes, vehicle make, model, year, trim and engine. Use multiple words to narrow results.',
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _qCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Search',
-                    hintText: 'e.g. tailgate, WL-A3K7R2, shelf A3, PN123, qty:2, ranger...',
+                    hintText: 'e.g. ranger headlight, ford mirror, 2020 turbo, AB39-13005...',
                     prefixIcon: Icon(Icons.search),
                   ),
                   // Listener on _qCtrl handles debounced search — no onChanged needed
@@ -7891,10 +7925,30 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
                                 // Part name (if consistent)
                                 if (name.isNotEmpty) ...[
                                   const SizedBox(height: 3),
-                                  Text(
-                                    name,
-                                    style: const TextStyle(
-                                        color: Colors.white54, fontSize: 13),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          name,
+                                          style: const TextStyle(
+                                              color: Colors.white54, fontSize: 13),
+                                        ),
+                                      ),
+                                      if (g.commonSide.isNotEmpty) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.08),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Text(
+                                            g.commonSide,
+                                            style: const TextStyle(fontSize: 11, color: Colors.white54),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ],
                               ],
@@ -7952,7 +8006,8 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
 class _PartHit {
   final Vehicle vehicle;
   final Part part;
-  _PartHit({required this.vehicle, required this.part});
+  final int score; // relevance: 3=name match, 2=name+vehicle, 1=anywhere
+  _PartHit({required this.vehicle, required this.part, this.score = 1});
 }
 
 /// ----------------------------
