@@ -70,14 +70,43 @@ void main() {
     enqueue(x, y + 1);
   }
 
-  // Save transparent version (Android fg)
-  File('assets/icon/icon_fg.png').writeAsBytesSync(img.encodePng(transparent));
-  print('Done — assets/icon/icon_fg.png (transparent background)');
+  // Auto-crop: find bounding box of non-transparent pixels.
+  int minX = size, maxX = 0, minY = size, maxY = 0;
+  for (int y = 0; y < size; y++) {
+    for (int x = 0; x < size; x++) {
+      final px = transparent.getPixel(x, y);
+      if (px.a.toInt() > 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
 
-  // iOS version: composite transparent logo onto dark background (#1A1A1A)
+  // Add 4% padding around content.
+  final contentW = maxX - minX;
+  final contentH = maxY - minY;
+  final pad = ((contentW > contentH ? contentW : contentH) * 0.04).toInt();
+  final cropX = (minX - pad).clamp(0, size - 1);
+  final cropY = (minY - pad).clamp(0, size - 1);
+  final cropW = (maxX - minX + pad * 2 + 1).clamp(1, size - cropX);
+  final cropH = (maxY - minY + pad * 2 + 1).clamp(1, size - cropY);
+
+  final cropped = img.copyCrop(transparent, x: cropX, y: cropY, width: cropW, height: cropH);
+
+  // Scale cropped content back to 1024x1024.
+  final scaled = img.copyResize(cropped, width: size, height: size,
+      interpolation: img.Interpolation.cubic);
+
+  // Save transparent version (Android fg)
+  File('assets/icon/icon_fg.png').writeAsBytesSync(img.encodePng(scaled));
+  print('Done — assets/icon/icon_fg.png (transparent background, cropped)');
+
+  // iOS version: composite onto dark background (#1A1A1A)
   final bg = img.Image(width: size, height: size);
   img.fill(bg, color: img.ColorRgb8(0x1A, 0x1A, 0x1A));
-  img.compositeImage(bg, transparent);
+  img.compositeImage(bg, scaled);
   File('assets/icon/icon_ios.png').writeAsBytesSync(img.encodePng(bg));
   print('Done — assets/icon/icon_ios.png (dark background for iOS)');
 }
