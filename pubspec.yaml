@@ -2,7 +2,7 @@ name: wrecklog
 description: A simple vehicle dismantling and parts tracking app.
 publish_to: "none"
 
-version: 1.6.0+27
+version: 1.6.0+28
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -39,6 +39,7 @@ flutter:
   assets:
     - assets/
     - assets/icon/
+    - assets/logo/
 
 flutter_launcher_icons:
   android: true
@@ -46,4 +47,4 @@ flutter_launcher_icons:
   image_path_android: assets/icon/icon_fg.png
   image_path_ios: assets/icon/icon_ios.png
   adaptive_icon_foreground: assets/icon/icon_fg.png
-  adaptive_icon_background: "#2E7D32"
+  adaptive_icon_background: "#1A1A1A"

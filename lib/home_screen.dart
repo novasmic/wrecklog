@@ -212,76 +212,10 @@ class HomeScreen extends StatelessWidget {
                         size: Size(screenWidth, 220),
                         painter: _GlowPainter(),
                       ),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // App icon with glow ring
-                          Container(
-                            width: 88,
-                            height: 88,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xFF1A1208),
-                              border: Border.all(
-                                color: const Color(0xFFE8700A).withValues(alpha: 0.35),
-                                width: 1.5,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFFE8700A).withValues(alpha: 0.25),
-                                  blurRadius: 24,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            padding: const EdgeInsets.all(10),
-                            child: Image.asset('assets/icon/icon_fg.png'),
-                          ),
-                          const SizedBox(height: 16),
-                          const WreckLogLogo(),
-                          const SizedBox(height: 10),
-
-                          // Tagline with dividers
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 1,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.transparent,
-                                      const Color(0xFFE8700A).withValues(alpha: 0.6),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                'Track Every Part. Track Real Profit.',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.45),
-                                  fontSize: 12,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Container(
-                                width: 28,
-                                height: 1,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      const Color(0xFFE8700A).withValues(alpha: 0.6),
-                                      Colors.transparent,
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                      Image.asset(
+                        'assets/icon/icon_fg.png',
+                        width: screenWidth * 0.90,
+                        fit: BoxFit.contain,
                       ),
                     ],
                   ),

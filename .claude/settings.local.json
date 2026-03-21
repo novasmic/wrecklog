@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze:*)",
+      "Bash(grep:*)",
+      "Bash(taskkill:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(flutter clean:*)",
+      "Bash(flutter pub:*)",
+      "Bash(flutter run:*)",
+      "Bash(cd \"C:\\\\src\\\\wrecklog\" && dart analyze lib/main.dart 2>&1 | head -100)",
+      "Bash(cd C:/src/wrecklog && dart run tool/make_ios_icon.dart 2>&1)",
+      "Bash(cd C:/src/wrecklog && dart run flutter_launcher_icons 2>&1)",
+      "Bash(cd C:/src/wrecklog && dart run tool/make_icon_from_logo.dart 2>&1)"
+    ]
+  }
+}
