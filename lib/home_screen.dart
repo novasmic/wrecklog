@@ -203,18 +203,18 @@ class HomeScreen extends StatelessWidget {
                 // ── Logo area with glow ────────────────────────────
                 SizedBox(
                   width: screenWidth,
-                  height: 220,
+                  height: 280,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       // Radial glow behind logo
                       CustomPaint(
-                        size: Size(screenWidth, 220),
+                        size: Size(screenWidth, 280),
                         painter: _GlowPainter(),
                       ),
                       Image.asset(
                         'assets/icon/icon_fg.png',
-                        width: screenWidth * 0.90,
+                        width: screenWidth,
                         fit: BoxFit.contain,
                       ),
                     ],
