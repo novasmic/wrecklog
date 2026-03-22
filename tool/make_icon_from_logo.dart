@@ -70,6 +70,39 @@ void main() {
     enqueue(x, y + 1);
   }
 
+  // Second pass: clean up fringe — any pixel adjacent to a transparent pixel
+  // that is near-white gets its alpha reduced proportionally to its whiteness.
+  // This removes the anti-aliased white halo without touching interior whites.
+  const fringeThreshold = 200;
+  for (int y = 0; y < size; y++) {
+    for (int x = 0; x < size; x++) {
+      final px = transparent.getPixel(x, y);
+      if (px.a.toInt() == 0) continue; // already transparent
+
+      // Check if any neighbour is transparent.
+      bool hasTransparentNeighbour = false;
+      for (final (nx, ny) in [(x-1,y),(x+1,y),(x,y-1),(x,y+1)]) {
+        if (nx < 0 || nx >= size || ny < 0 || ny >= size) continue;
+        if (transparent.getPixel(nx, ny).a.toInt() == 0) {
+          hasTransparentNeighbour = true;
+          break;
+        }
+      }
+      if (!hasTransparentNeighbour) continue;
+
+      final r = px.r.toInt();
+      final g = px.g.toInt();
+      final b = px.b.toInt();
+      // Whiteness 0..255
+      final whiteness = (r + g + b) ~/ 3;
+      if (whiteness > fringeThreshold) {
+        // Scale alpha down — the whiter the pixel, the more transparent it becomes.
+        final newAlpha = ((255 - whiteness) * 255 ~/ (255 - fringeThreshold)).clamp(0, 255);
+        transparent.setPixelRgba(x, y, r, g, b, newAlpha);
+      }
+    }
+  }
+
   // Auto-crop: find bounding box of non-transparent pixels.
   int minX = size, maxX = 0, minY = size, maxY = 0;
   for (int y = 0; y < size; y++) {
