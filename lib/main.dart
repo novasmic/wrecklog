@@ -312,7 +312,12 @@ class _AppShellState extends State<AppShell> {
     // Home screen is the navigation hub — shown without a nav bar.
     if (_tab == 0) {
       return HomeScreen(
-        onAddVehicle:   () => setState(() => _tab = 1),
+        onAddVehicle:   () async {
+          final created = await Navigator.of(context).push<Vehicle>(
+            MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
+          );
+          if (created != null) await _addVehicle(created);
+        },
         onViewVehicles: () => setState(() => _tab = 1),
         onSearchParts:  () => setState(() => _tab = 2),
         onStats:        () => setState(() => _tab = 3),
@@ -5310,6 +5315,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
   final _conditionCtrl = TextEditingController();
   final _saleCtrl = TextEditingController();
   final _nameFocusNode = FocusNode();
+  final _pnFocusNode = FocusNode();
   bool _showLink = false;
   String? _category;
   String? _suggestedCategory;
@@ -5339,6 +5345,12 @@ class _AddPartScreenState extends State<AddPartScreen> {
   /// True once the part is saved — used to clean up photos on cancel.
   bool _saved = false;
 
+  /// Recent unique part names for quick-tap shortcuts.
+  List<String> _recentPartNames = [];
+
+  /// Price hint from history — shown as helper text, not hard-filled.
+  String? _priceHint;
+
   @override
   void initState() {
     super.initState();
@@ -5348,6 +5360,23 @@ class _AddPartScreenState extends State<AddPartScreen> {
       if (mounted) setState(() => _categories = cats);
     }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
     _nameFocusNode.addListener(_onNameFocusChanged);
+    _pnFocusNode.addListener(_onPnFocusChanged);
+
+    // Build recent part names list — unique names sorted by most recently added.
+    final seen = <String>{};
+    final recent = <String>[];
+    final allParts = widget.allVehicles
+        .expand((v) => v.parts)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    for (final p in allParts) {
+      final name = p.name.trim();
+      if (name.isNotEmpty && seen.add(name.toLowerCase())) {
+        recent.add(name);
+        if (recent.length >= 6) break;
+      }
+    }
+    _recentPartNames = recent;
     final v = widget.vehicle;
     _vMake = v.make.isEmpty ? null : v.make;
     _vModel = v.model.isEmpty ? null : v.model;
@@ -5372,6 +5401,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
     _conditionCtrl.dispose();
     _saleCtrl.dispose();
     _nameFocusNode.dispose();
+    _pnFocusNode.dispose();
     // If user cancelled without saving, clean up any photos they took
     if (!_saved) {
       PhotoStorage.deleteAllForOwner('part', _partId).catchError((Object e) {
@@ -5396,10 +5426,28 @@ class _AddPartScreenState extends State<AddPartScreen> {
     return best;
   }
 
+  /// Detects Left/Right/Pair from keywords in the part name.
+  String? _detectSideFromName(String name) {
+    final lower = name.toLowerCase();
+    final leftKw  = ['left', ' lh', 'lh ', 'driver side', 'drivers side'];
+    final rightKw = ['right', ' rh', 'rh ', 'passenger side'];
+    final pairKw  = ['pair', 'set of 2', 'both sides'];
+    if (pairKw.any((k) => lower.contains(k)))  return 'Pair';
+    if (leftKw.any((k) => lower.contains(k)))  return 'Left';
+    if (rightKw.any((k) => lower.contains(k))) return 'Right';
+    return null;
+  }
+
   void _onNameFocusChanged() {
     if (_nameFocusNode.hasFocus) return;
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
+
+    // Auto-suggest side from name keywords if not already set.
+    if (_side == null) {
+      final detectedSide = _detectSideFromName(name);
+      if (detectedSide != null) setState(() => _side = detectedSide);
+    }
 
     final match = _findBestMatchingPart(name);
 
@@ -5446,6 +5494,68 @@ class _AddPartScreenState extends State<AddPartScreen> {
     }
   }
 
+  /// When part number loses focus, look up the most recent part with that number
+  /// and prefill all empty fields from it.
+  void _onPnFocusChanged() {
+    if (_pnFocusNode.hasFocus) return;
+    final pn = _pnCtrl.text.trim();
+    if (pn.isEmpty) return;
+
+    final normalizedPn = normalizePartNumber(pn);
+    Part? best;
+    for (final v in widget.allVehicles) {
+      for (final p in v.parts) {
+        if (p.partNumber == null) continue;
+        if (normalizePartNumber(p.partNumber!) == normalizedPn) {
+          if (best == null || p.createdAt.isAfter(best.createdAt)) best = p;
+        }
+      }
+    }
+    if (best == null) return;
+
+    bool filled = false;
+    setState(() {
+      if (_nameCtrl.text.isEmpty) {
+        _nameCtrl.text = best!.name;
+        filled = true;
+      }
+      if (_category == null && best!.category != null) {
+        _category = best!.category;
+        filled = true;
+      }
+      if (_conditionCtrl.text.isEmpty && best!.partCondition != null) {
+        _conditionCtrl.text = best!.partCondition!;
+        filled = true;
+      }
+      if (_side == null && best!.side != null) {
+        _side = best!.side;
+        filled = true;
+      }
+      if (_locCtrl.text.isEmpty && (best!.location ?? '').isNotEmpty) {
+        _locCtrl.text = best!.location!;
+        filled = true;
+      }
+      if (best!.askingPriceCents != null) {
+        _priceHint = 'Last used: ${formatMoneyFromCents(best!.askingPriceCents!)}';
+      }
+      if (_notesCtrl.text.isEmpty && (best!.notes ?? '').isNotEmpty) {
+        _notesCtrl.text = best!.notes!;
+        filled = true;
+      }
+      // Set category suggestion too
+      if (best!.category != null) _suggestedCategory = best!.category;
+    });
+
+    if (filled && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Prefilled from a previous entry — change anything you need'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   /// Returns the most recently sold price (formatted) for parts with the same name.
   String? _lastSoldHint() {
     final name = _nameCtrl.text.trim().toLowerCase();
@@ -5488,8 +5598,37 @@ class _AddPartScreenState extends State<AddPartScreen> {
     setState(() => _dateSold = picked);
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    // ── Duplicate part number check ───────────────────────────────────────
+    final pnRaw = _pnCtrl.text.trim();
+    if (pnRaw.isNotEmpty) {
+      final normalizedNew = normalizePartNumber(pnRaw);
+      final duplicate = widget.vehicle.parts.where((p) =>
+        p.partNumber != null &&
+        normalizePartNumber(p.partNumber!) == normalizedNew &&
+        p.state != PartState.sold &&
+        p.state != PartState.scrapped,
+      ).firstOrNull;
+      if (duplicate != null && mounted) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Duplicate part number'),
+            content: Text(
+              '"${duplicate.name}" already has part number $pnRaw and is in stock. '
+              'Are you sure you want to add another?',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Add anyway')),
+            ],
+          ),
+        );
+        if (!(proceed ?? false)) return;
+      }
+    }
 
     final askCents = parseMoneyToCents(_askCtrl.text);
     final saleCents = parseMoneyToCents(_saleCtrl.text);
@@ -5594,33 +5733,19 @@ class _AddPartScreenState extends State<AddPartScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Part name ─────────────────────────────────────────
-                  TextFormField(
-                    controller: _nameCtrl,
-                    focusNode: _nameFocusNode,
-                    decoration: const InputDecoration(
-                      labelText: 'Part name *',
-                      hintText: 'Tailgate / Headlight / ECU',
-                      prefixIcon: Icon(Icons.inventory_2_outlined),
-                    ),
-                    autofocus: true,
-                    textCapitalization: TextCapitalization.words,
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                    textInputAction: TextInputAction.next,
-                    inputFormatters: [LengthLimitingTextInputFormatter(150)],
-                  ),
-                  const SizedBox(height: 12),
                   // ── Part number + Qty ─────────────────────────────────
                   Row(
                     children: [
                       Expanded(
                         child: TextFormField(
                           controller: _pnCtrl,
+                          focusNode: _pnFocusNode,
                           decoration: const InputDecoration(
                             labelText: 'Part number',
-                            hintText: 'Optional',
+                            hintText: 'Optional — autofills from history',
                             prefixIcon: Icon(Icons.confirmation_number_outlined),
                           ),
+                          autofocus: true,
                           textInputAction: TextInputAction.next,
                           inputFormatters: [LengthLimitingTextInputFormatter(100)],
                         ),
@@ -5641,6 +5766,60 @@ class _AddPartScreenState extends State<AddPartScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  // ── Recent part shortcuts ─────────────────────────────
+                  if (_recentPartNames.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Text('Recent:', style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.35))),
+                        ..._recentPartNames.map((n) => GestureDetector(
+                          onTap: () {
+                            setState(() => _nameCtrl.text = n);
+                            // Trigger autofill as if name focus changed
+                            _onNameFocusChanged();
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                            ),
+                            child: Text(n, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  // ── Part name ─────────────────────────────────────────
+                  TextFormField(
+                    controller: _nameCtrl,
+                    focusNode: _nameFocusNode,
+                    decoration: const InputDecoration(
+                      labelText: 'Part name *',
+                      hintText: 'Tailgate / Headlight / ECU',
+                      prefixIcon: Icon(Icons.inventory_2_outlined),
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                    textInputAction: TextInputAction.next,
+                    inputFormatters: [LengthLimitingTextInputFormatter(150)],
+                  ),
+                  const SizedBox(height: 12),
+                  // ── Condition (buffer — gives category suggestion time to appear) ──
+                  TextFormField(
+                    controller: _conditionCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Condition (optional)',
+                      hintText: 'Good / Used / Damaged',
+                      prefixIcon: Icon(Icons.stars_outlined),
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 12),
                   // ── Category ──────────────────────────────────────────
@@ -5700,7 +5879,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                       hintText: 'Optional',
                       prefixText: '\$',
                       prefixIcon: const Icon(Icons.sell_outlined),
-                      helperText: _lastSoldHint(),
+                      helperText: _priceHint ?? _lastSoldHint(),
                       helperStyle: const TextStyle(color: Color(0xFFE8700A), fontSize: 12),
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -5716,17 +5895,6 @@ class _AddPartScreenState extends State<AddPartScreen> {
                       prefixIcon: Icon(Icons.payments_outlined),
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _conditionCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Condition (optional)',
-                      hintText: 'Good / Used / Damaged',
-                      prefixIcon: Icon(Icons.stars_outlined),
-                    ),
-                    textCapitalization: TextCapitalization.sentences,
                     textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 12),
