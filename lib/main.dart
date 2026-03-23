@@ -2037,7 +2037,6 @@ class _VehiclesHomeState extends State<VehiclesHome> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
   _VehicleSort _sort = _VehicleSort.newest;
-  bool _showCompleted = false;
   // Cached painter — never recreated on setState, avoids object churn.
   final _grainPainter = LeatherGrainPainter();
 
@@ -2050,7 +2049,6 @@ class _VehiclesHomeState extends State<VehiclesHome> {
   List<Vehicle> _filtered() {
     final q = _query.trim().toLowerCase();
     var list = widget.vehicles.where((v) {
-      if (!_showCompleted && v.status == VehicleStatus.shellGone) return false;
       if (q.isEmpty) return true;
       return _titleOrFallback(v).toLowerCase().contains(q) ||
           (v.identifier ?? '').toLowerCase().contains(q) ||
@@ -2091,12 +2089,6 @@ class _VehiclesHomeState extends State<VehiclesHome> {
       appBar: AppBar(
         title: const Text('WreckLog'),
         actions: [
-          IconButton(
-            tooltip: _showCompleted ? 'Hide completed' : 'Show completed',
-            onPressed: () => setState(() => _showCompleted = !_showCompleted),
-            icon: Icon(_showCompleted ? Icons.visibility_off_outlined : Icons.check_circle_outline,
-                color: _showCompleted ? const Color(0xFFE8700A) : null),
-          ),
           IconButton(
             tooltip: 'Reload',
             onPressed: onReload,
