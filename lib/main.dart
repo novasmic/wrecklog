@@ -8789,7 +8789,7 @@ class _StatsTabState extends State<StatsTab> {
                 const SizedBox(height: 3),
                 Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
                 if (onTap != null)
-                  Icon(Icons.chevron_right, size: 12, color: Colors.white24),
+                  const Icon(Icons.chevron_right, size: 12, color: Colors.white24),
               ],
             ),
           ),

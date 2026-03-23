@@ -13,6 +13,7 @@ void main() {
   final srcBytes = File('assets/logo/Wrecklog_logo.png').readAsBytesSync();
   final src = img.decodePng(srcBytes);
   if (src == null) {
+    // ignore: avoid_print
     print('ERROR: could not decode Wrecklog_logo.png');
     exit(1);
   }
