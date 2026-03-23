@@ -2066,6 +2066,12 @@ class _VehiclesHomeState extends State<VehiclesHome> {
       case _VehicleSort.biggestProfit:
         list.sort((a, b) => b.profitLossCents.compareTo(a.profitLossCents));
     }
+    // Always push completed (shell gone) vehicles to the bottom.
+    list.sort((a, b) {
+      final aComp = a.status == VehicleStatus.shellGone ? 1 : 0;
+      final bComp = b.status == VehicleStatus.shellGone ? 1 : 0;
+      return aComp.compareTo(bComp);
+    });
     return list;
   }
 
@@ -2660,7 +2666,9 @@ class VehicleCard extends StatelessWidget {
     // Prefix is everything before P/L, joined with separators.
     final statPrefix = statParts.isEmpty ? '' : '${statParts.join('  ·  ')}${showPL ? '  ·  ' : ''}';
 
-    return Material(
+    return Opacity(
+      opacity: isCompleted ? 0.45 : 1.0,
+      child: Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
@@ -2817,6 +2825,7 @@ class VehicleCard extends StatelessWidget {
           ),
         ),
       ),
+      ), // Opacity
     );
   }
 }
