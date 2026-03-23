@@ -9040,42 +9040,106 @@ class _StatsTabState extends State<StatsTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Needs Attention', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
+                  Row(
+                    children: [
+                      const Text('Needs Attention', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          '${_needsAttention.length}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.orange),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 4),
                   Text(
-                    'In-stock parts missing category, price, photos, or listing.',
+                    'In-stock parts that are incomplete — tap a row to open the vehicle.',
                     style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
                   ),
-                  const SizedBox(height: 12),
-                  ..._needsAttention.take(10).map((r) {
-                    final missing = <String>[];
-                    if ((r.part.category ?? '').trim().isEmpty) missing.add('category');
-                    if (r.part.askingPriceCents == null) missing.add('price');
-                    if (r.part.photoIds.isEmpty) missing.add('photos');
-                    if (!r.part.listings.any((l) => l.url.trim().isNotEmpty)) missing.add('listing');
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 6),
+                  // Legend
+                  const Wrap(
+                    spacing: 10,
+                    children: [
+                      _AttentionLegendItem(icon: Icons.label_outline, label: 'Category', color: Colors.blue),
+                      _AttentionLegendItem(icon: Icons.attach_money, label: 'Price', color: Color(0xFFE8700A)),
+                      _AttentionLegendItem(icon: Icons.photo_camera_outlined, label: 'Photos', color: Colors.purple),
+                      _AttentionLegendItem(icon: Icons.link, label: 'Listing', color: Colors.green),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ..._needsAttention.take(15).map((r) {
+                    final noCategory  = (r.part.category ?? '').trim().isEmpty;
+                    final noPrice     = r.part.askingPriceCents == null;
+                    final noPhotos    = r.part.photoIds.isEmpty;
+                    final noListing   = !r.part.listings.any((l) => l.url.trim().isNotEmpty);
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => VehicleDetailScreen(vehicle: r.vehicle, allVehicles: widget.vehicles),
+                      )),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(r.part.name,
+                                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  const SizedBox(height: 2),
+                                  Text(r.vehicleTitle,
+                                      style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
+                                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Missing-field icon badges
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(r.part.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                                const SizedBox(height: 2),
-                                Text(r.vehicleTitle,
-                                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                                const SizedBox(height: 2),
-                                Text('Missing: ${missing.join(', ')}',
-                                    style: TextStyle(fontSize: 11, color: Colors.orange.withValues(alpha: 0.8))),
+                                if (noCategory)
+                                  const Padding(padding: EdgeInsets.only(left: 4),
+                                    child: Tooltip(message: 'No category',
+                                      child: Icon(Icons.label_outline, size: 16, color: Colors.blue))),
+                                if (noPrice)
+                                  const Padding(padding: EdgeInsets.only(left: 4),
+                                    child: Tooltip(message: 'No asking price',
+                                      child: Icon(Icons.attach_money, size: 16, color: Color(0xFFE8700A)))),
+                                if (noPhotos)
+                                  const Padding(padding: EdgeInsets.only(left: 4),
+                                    child: Tooltip(message: 'No photos',
+                                      child: Icon(Icons.photo_camera_outlined, size: 16, color: Colors.purple))),
+                                if (noListing)
+                                  const Padding(padding: EdgeInsets.only(left: 4),
+                                    child: Tooltip(message: 'No listing link',
+                                      child: Icon(Icons.link, size: 16, color: Colors.green))),
                               ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 4),
+                            Icon(Icons.chevron_right, size: 16, color: Colors.white.withValues(alpha: 0.2)),
+                          ],
+                        ),
                       ),
                     );
                   }),
+                  if (_needsAttention.length > 15) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '+ ${_needsAttention.length - 15} more parts need attention',
+                      style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.35)),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -9527,6 +9591,25 @@ class _StatsPartListScreen extends StatelessWidget {
                 );
               },
             ),
+    );
+  }
+}
+
+class _AttentionLegendItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _AttentionLegendItem({required this.icon, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 3),
+        Text(label, style: TextStyle(fontSize: 11, color: color.withValues(alpha: 0.8))),
+      ],
     );
   }
 }
