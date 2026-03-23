@@ -2031,6 +2031,7 @@ class _VehiclesHomeState extends State<VehiclesHome> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
   _VehicleSort _sort = _VehicleSort.newest;
+  bool _showCompleted = false;
   // Cached painter — never recreated on setState, avoids object churn.
   final _grainPainter = LeatherGrainPainter();
 
@@ -2043,6 +2044,7 @@ class _VehiclesHomeState extends State<VehiclesHome> {
   List<Vehicle> _filtered() {
     final q = _query.trim().toLowerCase();
     var list = widget.vehicles.where((v) {
+      if (!_showCompleted && v.status == VehicleStatus.shellGone) return false;
       if (q.isEmpty) return true;
       return _titleOrFallback(v).toLowerCase().contains(q) ||
           (v.identifier ?? '').toLowerCase().contains(q) ||
@@ -2083,6 +2085,12 @@ class _VehiclesHomeState extends State<VehiclesHome> {
       appBar: AppBar(
         title: const Text('WreckLog'),
         actions: [
+          IconButton(
+            tooltip: _showCompleted ? 'Hide completed' : 'Show completed',
+            onPressed: () => setState(() => _showCompleted = !_showCompleted),
+            icon: Icon(_showCompleted ? Icons.visibility_off_outlined : Icons.check_circle_outline,
+                color: _showCompleted ? const Color(0xFFE8700A) : null),
+          ),
           IconButton(
             tooltip: 'Reload',
             onPressed: onReload,
@@ -2270,6 +2278,25 @@ class _VehiclesHomeState extends State<VehiclesHome> {
                                 false;
                             if (!ok) return;
                             await onDeleteVehicle(v.id);
+                          },
+                          onMarkCompleted: () async {
+                            final isCompleted = v.status == VehicleStatus.shellGone;
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: Text(isCompleted ? 'Mark Active?' : 'Mark Completed?'),
+                                content: Text(isCompleted
+                                    ? 'Move "${_titleOrFallback(v)}" back to active stripping?'
+                                    : 'Mark "${_titleOrFallback(v)}" as completed (shell gone)?'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                  FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(isCompleted ? 'Mark Active' : 'Mark Completed')),
+                                ],
+                              ),
+                            ) ?? false;
+                            if (!ok) return;
+                            v.status = isCompleted ? VehicleStatus.stripping : VehicleStatus.shellGone;
+                            await onUpdateVehicle(v);
                           },
                         ),
                       ),
@@ -2581,18 +2608,21 @@ class VehicleCard extends StatelessWidget {
   final Vehicle vehicle;
   final VoidCallback onOpen;
   final VoidCallback onDelete;
+  final VoidCallback? onMarkCompleted;
 
   const VehicleCard({
     super.key,
     required this.vehicle,
     required this.onOpen,
     required this.onDelete,
+    this.onMarkCompleted,
   });
 
   @override
   Widget build(BuildContext context) {
     final pl = vehicle.profitLossCents;
     final plColor = profitColor(pl);
+    final isCompleted = vehicle.status == VehicleStatus.shellGone;
 
     final typeIcon = switch (vehicle.itemType) {
       ItemType.car        => Icons.directions_car,
@@ -2645,17 +2675,23 @@ class VehicleCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Orange accent bar
+              // Accent bar — grey when completed, orange otherwise
               Container(
                 width: 4,
                 height: 76,
-                decoration: const BoxDecoration(
-                  borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFFE8700A), Color(0xFFC45A06)],
-                  ),
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                  gradient: isCompleted
+                      ? const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.grey, Color(0xFF555555)],
+                        )
+                      : const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xFFE8700A), Color(0xFFC45A06)],
+                        ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -2675,15 +2711,36 @@ class VehicleCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _titleOrFallback(vehicle),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _titleOrFallback(vehicle),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isCompleted) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.withValues(alpha: 0.4)),
+                            ),
+                            child: const Text(
+                              'Shell Gone',
+                              style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text.rich(
@@ -2726,9 +2783,21 @@ class VehicleCard extends StatelessWidget {
               ),
               // 3-dot menu
               PopupMenuButton<String>(
-                onSelected: (v) { if (v == 'delete') onDelete(); },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                onSelected: (v) {
+                  if (v == 'delete') onDelete();
+                  if (v == 'complete' && onMarkCompleted != null) onMarkCompleted!();
+                },
+                itemBuilder: (_) => [
+                  if (onMarkCompleted != null)
+                    PopupMenuItem(
+                      value: 'complete',
+                      child: ListTile(
+                        leading: Icon(isCompleted ? Icons.refresh : Icons.check_circle_outline, color: isCompleted ? Colors.orange : Colors.grey),
+                        title: Text(isCompleted ? 'Mark Active' : 'Mark Completed'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
                 ],
                 padding: EdgeInsets.zero,
                 iconSize: 20,
@@ -3728,6 +3797,9 @@ class VehicleDetailScreen extends StatefulWidget {
 class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   late Vehicle _v;
   _PartsViewFilter _filter = _PartsViewFilter.all;
+  String? _sideFilter;
+  bool _selectMode = false;
+  final Set<String> _selectedPartIds = {};
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
   List<String> _categories = List.from(kPartCategories);
@@ -4069,6 +4141,93 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   }
 
 
+  Future<void> _bulkMarkSold() async {
+    if (_selectedPartIds.isEmpty) return;
+    final ctrl = TextEditingController();
+    final cents = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Mark ${_selectedPartIds.length} part${_selectedPartIds.length == 1 ? '' : 's'} as sold'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Sold price each',
+            hintText: 'e.g. 100.00',
+            prefixText: '\$',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final c = parseMoneyToCents(ctrl.text) ?? 0;
+              Navigator.pop(ctx, c);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (cents == null || !mounted) return;
+    setState(() {
+      for (final p in _v.parts) {
+        if (_selectedPartIds.contains(p.id)) {
+          p.state = PartState.sold;
+          p.salePriceCents = cents;
+          p.dateSold ??= DateTime.now();
+          for (final l in p.listings) { l.isLive = false; }
+        }
+      }
+      _selectMode = false;
+      _selectedPartIds.clear();
+    });
+  }
+
+  void _bulkMarkScrapped() {
+    setState(() {
+      for (final p in _v.parts) {
+        if (_selectedPartIds.contains(p.id)) {
+          p.state = PartState.scrapped;
+          p.salePriceCents = null;
+          for (final l in p.listings) { l.isLive = false; }
+        }
+      }
+      _selectMode = false;
+      _selectedPartIds.clear();
+    });
+  }
+
+  Future<void> _bulkDelete() async {
+    if (_selectedPartIds.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${_selectedPartIds.length} part${_selectedPartIds.length == 1 ? '' : 's'}?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    ) ?? false;
+    if (!ok || !mounted) return;
+    for (final id in _selectedPartIds) {
+      await PhotoStorage.deleteAllForOwner('part', id);
+    }
+    setState(() {
+      _v.parts.removeWhere((p) => _selectedPartIds.contains(p.id));
+      _selectMode = false;
+      _selectedPartIds.clear();
+    });
+  }
+
   List<Widget> _buildGroupedParts(List<Part> parts, BuildContext context) {
     // Group parts by category
     final Map<String, List<Part>> groups = {};
@@ -4137,21 +4296,53 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
               children: catParts.map((p) => Padding(
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                 child: GestureDetector(
-                  onTap: () => _openPartDetail(p),
-                  child: PartCard(
-                    part: p,
-                    onEdit: () => _editPart(p),
-                    onDelete: () => _deletePart(p),
-                    onMarkSold: () => _setSold(p),
-                    onMarkScrapped: () => _setScrapped(p),
-                    onMarkInStock: () => _setInStock(p),
-                    onOpenLinks: () => showLinksSheet(context, p),
-                    onDuplicate: () => _duplicatePart(p),
-                    onAddToCommonParts: () => showAddToCommonPartsSheet(
-                      context,
-                      partName: p.name,
-                      itemType: _v.itemType,
-                    ),
+                  onTap: _selectMode
+                      ? () => setState(() {
+                          if (_selectedPartIds.contains(p.id)) { _selectedPartIds.remove(p.id); }
+                          else { _selectedPartIds.add(p.id); }
+                        })
+                      : () => _openPartDetail(p),
+                  onLongPress: () {
+                    if (!_selectMode) {
+                      setState(() {
+                        _selectMode = true;
+                        _selectedPartIds.add(p.id);
+                      });
+                    }
+                  },
+                  child: Stack(
+                    children: [
+                      PartCard(
+                        part: p,
+                        onEdit: () => _editPart(p),
+                        onDelete: () => _deletePart(p),
+                        onMarkSold: () => _setSold(p),
+                        onMarkScrapped: () => _setScrapped(p),
+                        onMarkInStock: () => _setInStock(p),
+                        onOpenLinks: () => showLinksSheet(context, p),
+                        onDuplicate: () => _duplicatePart(p),
+                        onAddToCommonParts: () => showAddToCommonPartsSheet(
+                          context,
+                          partName: p.name,
+                          itemType: _v.itemType,
+                        ),
+                      ),
+                      if (_selectMode)
+                        Positioned(
+                          top: 8, right: 8,
+                          child: Container(
+                            width: 22, height: 22,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _selectedPartIds.contains(p.id) ? const Color(0xFFE8700A) : Colors.white24,
+                              border: Border.all(color: Colors.white54, width: 1.5),
+                            ),
+                            child: _selectedPartIds.contains(p.id)
+                                ? const Icon(Icons.check, size: 14, color: Colors.white)
+                                : null,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               )).toList(),
@@ -4178,6 +4369,11 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
           return inStock && !p.hasLiveListings;
         }).toList();
         break;
+    }
+
+    // Apply side filter
+    if (_sideFilter != null) {
+      parts = parts.where((p) => p.side == _sideFilter).toList();
     }
 
     // Apply search query
@@ -4261,6 +4457,31 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       );
     }
 
+    Widget sideChip(String label, String? value) {
+      final active = _sideFilter == value;
+      return GestureDetector(
+        onTap: () => setState(() => _sideFilter = active ? null : value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: active ? Colors.blue.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.05),
+            border: Border.all(
+              color: active ? Colors.blue.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.10),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: active ? Colors.blue[200] : Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+      );
+    }
+
     // PopScope ensures the latest vehicle state is always returned to the
     // parent (and thus persisted) even when the user navigates back via
     // system gesture or hardware button, not just the explicit back arrow.
@@ -4270,7 +4491,15 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
         if (!didPop) _saveAndExit();
       },
       child: Scaffold(
-      appBar: AppBar(
+      appBar: _selectMode
+          ? AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => setState(() { _selectMode = false; _selectedPartIds.clear(); }),
+              ),
+              title: Text('${_selectedPartIds.length} selected'),
+            )
+          : AppBar(
         title: Text(_titleOrFallback(_v)),
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _saveAndExit),
         actions: [
@@ -4285,11 +4514,24 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
             onSelected: (value) async {
               if (value == 'quick_add') await _quickAddPresets();
               if (value == 'delete_sold_photos') await _deleteSoldPartPhotos();
+              if (value == 'toggle_completed') {
+                setState(() {
+                  _v.status = _v.status == VehicleStatus.shellGone
+                      ? VehicleStatus.stripping
+                      : VehicleStatus.shellGone;
+                });
+              }
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'quick_add', child: ListTile(
                 leading: Icon(Icons.playlist_add),
                 title: Text('Add common parts'),
+                contentPadding: EdgeInsets.zero,
+              )),
+              const PopupMenuDivider(),
+              PopupMenuItem(value: 'toggle_completed', child: ListTile(
+                leading: Icon(_v.status == VehicleStatus.shellGone ? Icons.refresh : Icons.check_circle_outline),
+                title: Text(_v.status == VehicleStatus.shellGone ? 'Mark Active' : 'Mark Completed'),
                 contentPadding: EdgeInsets.zero,
               )),
               const PopupMenuDivider(),
@@ -4390,6 +4632,19 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              sideChip('All sides', null),
+              const SizedBox(width: 6),
+              sideChip('Left', 'Left'),
+              const SizedBox(width: 6),
+              sideChip('Right', 'Right'),
+              const SizedBox(width: 6),
+              sideChip('Pair', 'Pair'),
+            ]),
+          ),
           const SizedBox(height: 12),
 
           // ── Search bar ───────────────────────────────────────────────
@@ -4445,6 +4700,43 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
           else ..._buildGroupedParts(shownParts, context),
             ],
           ),
+          if (_selectMode)
+            Positioned(
+              left: 0, right: 0, bottom: 0,
+              child: SafeArea(
+                child: Container(
+                  color: const Color(0xFF1A1A1A),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => setState(() { _selectMode = false; _selectedPartIds.clear(); }),
+                        child: const Text('Cancel'),
+                      ),
+                      const Spacer(),
+                      Text('${_selectedPartIds.length} selected', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: _selectedPartIds.isEmpty ? null : _bulkMarkScrapped,
+                        child: const Text('Scrap', style: TextStyle(color: Colors.orange)),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: _selectedPartIds.isEmpty ? null : _bulkDelete,
+                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                        child: const Text('Delete'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: _selectedPartIds.isEmpty ? null : _bulkMarkSold,
+                        style: FilledButton.styleFrom(backgroundColor: Colors.green),
+                        child: const Text('Mark Sold'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     ), // Scaffold
@@ -4609,6 +4901,49 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     if (mounted) Navigator.of(context).pop(updated);
   }
 
+  Future<void> _markSold() async {
+    if (_part.state == PartState.sold || _part.state == PartState.scrapped) return;
+    final ctrl = TextEditingController(
+      text: _part.salePriceCents == null ? '' : (_part.salePriceCents! / 100).toStringAsFixed(2),
+    );
+    final cents = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as sold'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Sold price',
+            hintText: 'e.g. 100.00',
+            prefixText: '\$',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final c = parseMoneyToCents(ctrl.text) ?? 0;
+              Navigator.pop(ctx, c);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (cents == null || !mounted) return;
+    setState(() {
+      _part.state = PartState.sold;
+      _part.salePriceCents = cents;
+      _part.dateSold ??= DateTime.now();
+      for (final l in _part.listings) { l.isLive = false; }
+    });
+    widget.onPartEdited?.call(_part);
+    if (mounted) Navigator.of(context).pop(_part);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Use live _part (may have been updated by _edit())
@@ -4618,6 +4953,8 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
         ? '${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}'
         : null;
     final colorStr = (vehicle?.color ?? '').trim().isEmpty ? null : vehicle!.color;
+
+    final canMarkSold = part.state != PartState.sold && part.state != PartState.scrapped;
 
     return Scaffold(
       appBar: AppBar(
@@ -4632,6 +4969,15 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
           const SizedBox(width: 4),
         ],
       ),
+      floatingActionButton: canMarkSold
+          ? FloatingActionButton.extended(
+              heroTag: 'fab_mark_sold',
+              onPressed: _markSold,
+              backgroundColor: Colors.green,
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Mark Sold'),
+            )
+          : null,
       body: ListView(
         padding: const EdgeInsets.all(kPad),
         children: [
@@ -5176,6 +5522,15 @@ class PartCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if (part.photoIds.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        const Icon(Icons.photo_camera, size: 11, color: Colors.white30),
+                        const SizedBox(width: 2),
+                        Text(
+                          '${part.photoIds.length}',
+                          style: const TextStyle(fontSize: 10, color: Colors.white30),
+                        ),
+                      ],
                       if (hasMissingData) ...[
                         const SizedBox(width: 4),
                         Container(
@@ -8252,6 +8607,12 @@ class _StatsTabState extends State<StatsTab> {
   Map<String, int> _totalLinksByPlatform = {};
   List<String> _platforms = [];
   List<_StatPartRow> _oldestTop = [];
+  int _avgDaysToSell = 0;
+  int _stalledCount = 0;
+  List<({String vehicleTitle, String partName, int days, String? partNumber})> _stalledParts = [];
+  List<({String vehicleTitle, Part part, Vehicle vehicle})> _needsAttention = [];
+  List<({Vehicle vehicle, Part part})> _listedParts = [];
+  List<({Vehicle vehicle, Part part})> _unlistedParts = [];
 
   @override
   void initState() {
@@ -8278,6 +8639,13 @@ class _StatsTabState extends State<StatsTab> {
     final Map<String, int> liveListingsByPlatform = {};
     final Map<String, int> totalLinksByPlatform = {};
     final List<_StatPartRow> oldestNotListed = [];
+    int daysToSellSum = 0;
+    int daysToSellCount = 0;
+    int stalledCount = 0;
+    final stalledParts = <({String vehicleTitle, String partName, int days, String? partNumber})>[];
+    final needsAttention = <({String vehicleTitle, Part part, Vehicle vehicle})>[];
+    final listedParts = <({Vehicle vehicle, Part part})>[];
+    final unlistedParts = <({Vehicle vehicle, Part part})>[];
 
     for (final v in widget.vehicles) {
       totalPurchase += (v.purchasePriceCents ?? 0);
@@ -8292,8 +8660,12 @@ class _StatsTabState extends State<StatsTab> {
 
         if (p.hasLiveListings) {
           totalListedLive += 1;
+          listedParts.add((vehicle: v, part: p));
         } else {
-          if (inStock) totalNotListed += 1;
+          if (inStock) {
+            totalNotListed += 1;
+            unlistedParts.add((vehicle: v, part: p));
+          }
         }
 
         for (final l in p.listings) {
@@ -8317,6 +8689,42 @@ class _StatsTabState extends State<StatsTab> {
             ),
           );
         }
+
+        // Avg days to sell
+        if (p.state == PartState.sold && p.dateListed != null && p.dateSold != null) {
+          daysToSellSum += p.dateSold!.difference(p.dateListed!).inDays.abs();
+          daysToSellCount++;
+        }
+
+        // Stalled listings (live listing, 30+ days in stock)
+        if (inStock && p.hasLiveListings && p.dateListed != null) {
+          final daysListed = DateTime.now().difference(p.dateListed!).inDays;
+          if (daysListed >= 30) {
+            stalledCount++;
+            final pn = (p.partNumber ?? '').trim();
+            stalledParts.add((
+              vehicleTitle: StatsTab._vehicleTitle(v),
+              partName: p.name,
+              days: daysListed,
+              partNumber: pn.isEmpty ? null : pn,
+            ));
+          }
+        }
+
+        // Needs attention (in-stock, missing data)
+        if (inStock) {
+          final hasCategory = (p.category ?? '').trim().isNotEmpty;
+          final hasPrice = p.askingPriceCents != null;
+          final hasPhotos = p.photoIds.isNotEmpty;
+          final hasListingLink = p.listings.any((l) => l.url.trim().isNotEmpty);
+          if (!hasCategory || !hasPrice || !hasPhotos || !hasListingLink) {
+            needsAttention.add((
+              vehicleTitle: StatsTab._vehicleTitle(v),
+              part: p,
+              vehicle: v,
+            ));
+          }
+        }
       }
     }
 
@@ -8327,6 +8735,7 @@ class _StatsTabState extends State<StatsTab> {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
     oldestNotListed.sort((a, b) => b.days.compareTo(a.days));
+    stalledParts.sort((a, b) => b.days.compareTo(a.days));
 
     _totalPurchase = totalPurchase;
     _totalRevenue = totalRevenue;
@@ -8339,6 +8748,12 @@ class _StatsTabState extends State<StatsTab> {
     _totalLinksByPlatform = totalLinksByPlatform;
     _platforms = platforms;
     _oldestTop = oldestNotListed.take(10).toList();
+    _avgDaysToSell = daysToSellCount > 0 ? (daysToSellSum / daysToSellCount).round() : 0;
+    _stalledCount = stalledCount;
+    _stalledParts = stalledParts;
+    _needsAttention = needsAttention;
+    _listedParts = listedParts;
+    _unlistedParts = unlistedParts;
   }
 
   @override
@@ -8353,22 +8768,27 @@ class _StatsTabState extends State<StatsTab> {
     final totalPL = _totalRevenue - _totalPurchase;
 
     // ── Local helpers ───────────────────────────────────────────────────────
-    Widget statBox(String value, String label, {Color? valueColor}) {
+    Widget statBox(String value, String label, {Color? valueColor, VoidCallback? onTap}) {
       final color = valueColor ?? Colors.white;
       return Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: Colors.white.withValues(alpha: 0.05),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-          ),
-          child: Column(
-            children: [
-              Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: color)),
-              const SizedBox(height: 3),
-              Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
-            ],
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.white.withValues(alpha: onTap != null ? 0.07 : 0.05),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            ),
+            child: Column(
+              children: [
+                Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: color)),
+                const SizedBox(height: 3),
+                Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
+                if (onTap != null)
+                  Icon(Icons.chevron_right, size: 12, color: Colors.white24),
+              ],
+            ),
           ),
         ),
       );
@@ -8422,10 +8842,16 @@ class _StatsTabState extends State<StatsTab> {
                 ]),
                 const SizedBox(height: 8),
                 Row(children: [
-                  statBox('$_totalListedLive', 'Listed', valueColor: Colors.green),
+                  statBox('$_totalListedLive', 'Listed', valueColor: Colors.green,
+                    onTap: _listedParts.isEmpty ? null : () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => _StatsPartListScreen(title: 'Listed Parts', parts: _listedParts)),
+                    )),
                   gap,
                   statBox('$_totalNotListed', 'Unlisted',
-                    valueColor: _totalNotListed > 0 ? Colors.orange : Colors.white),
+                    valueColor: _totalNotListed > 0 ? Colors.orange : Colors.white,
+                    onTap: _unlistedParts.isEmpty ? null : () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => _StatsPartListScreen(title: 'Unlisted Parts', parts: _unlistedParts)),
+                    )),
                   gap,
                   if (_totalQty != _totalParts)
                     statBox('$_totalQty', 'Total Qty')
@@ -8538,6 +8964,122 @@ class _StatsTabState extends State<StatsTab> {
               ],
             ),
           ),
+          const SizedBox(height: 10),
+
+          // ── Avg days to sell ──────────────────────────────────────────
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Sales Performance', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
+                const SizedBox(height: 12),
+                Row(children: [
+                  statBox(_avgDaysToSell > 0 ? '${_avgDaysToSell}d' : '—', 'Avg Days to Sell',
+                    valueColor: _avgDaysToSell > 0 ? StatsTab._ageColor(_avgDaysToSell) : null),
+                  gap,
+                  statBox('$_stalledCount', 'Stalled (30d+)',
+                    valueColor: _stalledCount > 0 ? Colors.orange : Colors.white),
+                  gap,
+                  const Expanded(child: SizedBox()),
+                ]),
+              ],
+            ),
+          ),
+
+          // ── Stalled listings ──────────────────────────────────────────
+          if (_stalledParts.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Stalled Listings', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Live listings sitting 30+ days without selling.',
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  const SizedBox(height: 12),
+                  ..._stalledParts.take(10).map((r) {
+                    final ageColor = StatsTab._ageColor(r.days);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(r.partName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                const SizedBox(height: 2),
+                                Text(r.vehicleTitle,
+                                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
+                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                                if ((r.partNumber ?? '').trim().isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text('PN: ${r.partNumber}',
+                                      style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3), fontFamily: 'monospace')),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Text('${r.days}d', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: ageColor)),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
+
+          // ── Needs attention ───────────────────────────────────────────
+          if (_needsAttention.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Needs Attention', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'In-stock parts missing category, price, photos, or listing.',
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  const SizedBox(height: 12),
+                  ..._needsAttention.take(10).map((r) {
+                    final missing = <String>[];
+                    if ((r.part.category ?? '').trim().isEmpty) missing.add('category');
+                    if (r.part.askingPriceCents == null) missing.add('price');
+                    if (r.part.photoIds.isEmpty) missing.add('photos');
+                    if (!r.part.listings.any((l) => l.url.trim().isNotEmpty)) missing.add('listing');
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(r.part.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                const SizedBox(height: 2),
+                                Text(r.vehicleTitle,
+                                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
+                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 2),
+                                Text('Missing: ${missing.join(', ')}',
+                                    style: TextStyle(fontSize: 11, color: Colors.orange.withValues(alpha: 0.8))),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
             ],
           ),
         ],
@@ -8948,6 +9490,42 @@ class _ManagePlatformsScreenState extends State<ManagePlatformsScreen> {
                   ),
                 ),
               ],
+            ),
+    );
+  }
+}
+
+class _StatsPartListScreen extends StatelessWidget {
+  final String title;
+  final List<({Vehicle vehicle, Part part})> parts;
+
+  const _StatsPartListScreen({required this.title, required this.parts});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: parts.isEmpty
+          ? const Center(child: Text('No parts'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(kPad),
+              itemCount: parts.length,
+              itemBuilder: (ctx, i) {
+                final (:vehicle, :part) = parts[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: ListTile(
+                    title: Text(part.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text('${StatsTab._vehicleTitle(vehicle)}  ·  ${part.state.label}',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+                    trailing: part.askingPriceCents != null
+                        ? Text(formatMoneyFromCents(part.askingPriceCents!), style: const TextStyle(color: Color(0xFFE8700A)))
+                        : null,
+                    tileColor: Colors.white.withValues(alpha: 0.04),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                );
+              },
             ),
     );
   }
