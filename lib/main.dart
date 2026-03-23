@@ -2605,6 +2605,13 @@ class _VehicleDetailsSheet extends StatelessWidget {
             style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13),
           ),
           const SizedBox(height: 16),
+          // Vehicle photos
+          PhotoStrip(
+            ownerType: 'vehicle',
+            ownerId: vehicle.id,
+            maxCount: kMaxVehiclePhotos,
+          ),
+          const SizedBox(height: 16),
           const Divider(color: Colors.white12),
           const SizedBox(height: 8),
           if (rows.isEmpty)
