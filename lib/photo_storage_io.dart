@@ -2,6 +2,15 @@
 // Android + iOS implementation — stores JPEG files in app documents directory.
 // Metadata stored in a JSON file (no SharedPreferences size limits).
 // Never imported directly — used via photo_storage.dart conditional export.
+//
+// Path storage strategy (v2):
+//   Paths are stored RELATIVE to getApplicationDocumentsDirectory(), e.g.
+//   "wrecklog/photos/vehicles/abc/P123.jpg".
+//   On load, they are resolved to absolute paths for in-memory use.
+//   On save, they are converted back to relative paths.
+//   Old records with stale absolute paths (from before this change) are
+//   automatically rebased to the current documents directory on first load,
+//   healing the iOS "broken photos after TestFlight update" issue.
 
 import 'dart:convert';
 import 'dart:io';
@@ -45,6 +54,8 @@ class PhotoStorage {
     final dest = p.join(dir.path, '$id.jpg');
     await File(sourcePath).copy(dest);
 
+    // In-memory photo uses the current absolute path.
+    // _saveAll converts to relative before writing to disk.
     final photo = AppPhoto(
       id:         id,
       ownerType:  ownerType,
@@ -115,6 +126,7 @@ class PhotoStorage {
   }
 
   /// Loads all photo metadata, migrating from SharedPreferences if needed.
+  /// All returned AppPhoto records have current absolute paths.
   static Future<List<AppPhoto>> _loadAll() async {
     await _migrateFromPrefsIfNeeded();
     final file = await _metadataFile();
@@ -131,10 +143,17 @@ class PhotoStorage {
       final raw = await file.readAsString();
       if (raw.trim().isEmpty) return [];
       final list = jsonDecode(raw) as List<dynamic>;
-      return list
+      final photos = list
           .map((e) => AppPhoto.tryFromJson(e as Map<String, dynamic>))
           .whereType<AppPhoto>()
           .toList();
+
+      // Rebase paths to the current documents directory.
+      // This fixes stale absolute paths after iOS app container UUID changes
+      // (e.g. after a TestFlight update) and resolves relative paths stored
+      // by newer versions of the app.
+      final base = await getApplicationDocumentsDirectory();
+      return photos.map((ph) => _withAbsolutePath(ph, base.path)).toList();
     } catch (e) {
       // Corrupted metadata file — return empty rather than crash.
       if (kDebugMode) debugPrint('PhotoStorage: failed to read metadata: $e');
@@ -142,10 +161,16 @@ class PhotoStorage {
     }
   }
 
+  /// Saves [photos] to disk, converting absolute paths to relative first so
+  /// they survive future iOS app container UUID changes.
   static Future<void> _saveAll(List<AppPhoto> photos) async {
+    final base = await getApplicationDocumentsDirectory();
+    final toStore = photos
+        .map((ph) => _withRelativePath(ph, base.path))
+        .toList();
     final file = await _metadataFile();
     final jsonString = const JsonEncoder.withIndent('  ')
-        .convert(photos.map((ph) => ph.toJson()).toList());
+        .convert(toStore.map((ph) => ph.toJson()).toList());
 
     // Atomic write — write to .tmp, delete existing target, then rename.
     // Deleting first avoids rename failures on filesystems where rename
@@ -213,4 +238,62 @@ class PhotoStorage {
 
   static String _newId() =>
       'P${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(9999)}';
+
+  // ── Path helpers ──────────────────────────────────────────────────────────
+
+  /// Returns [ph] with its pathOrData resolved to a current absolute path.
+  ///
+  /// Handles two cases:
+  /// • Relative path (new format): joined with [basePath].
+  /// • Stale absolute path (old format, e.g. after iOS UUID change):
+  ///   finds the "Documents/wrecklog" segment and rebases onto [basePath].
+  static AppPhoto _withAbsolutePath(AppPhoto ph, String basePath) {
+    final path = ph.pathOrData;
+
+    String abs;
+    if (!p.isAbsolute(path)) {
+      // Relative — just resolve against current documents dir.
+      abs = p.join(basePath, path);
+    } else {
+      // Absolute — may be stale. Find the Documents/wrecklog boundary and
+      // rebase everything from "wrecklog" onward onto the current base path.
+      final marker = 'Documents${p.separator}wrecklog';
+      final idx = path.indexOf(marker);
+      if (idx < 0) return ph; // unknown format, leave as-is
+      final rel = path.substring(idx + 'Documents${p.separator}'.length);
+      abs = p.join(basePath, rel);
+    }
+
+    if (abs == path) return ph;
+    return AppPhoto(
+      id:        ph.id,
+      ownerType: ph.ownerType,
+      ownerId:   ph.ownerId,
+      createdAt: ph.createdAt,
+      pathOrData: abs,
+      remoteUrl: ph.remoteUrl,
+    );
+  }
+
+  /// Returns [ph] with its pathOrData converted to a relative path by
+  /// stripping the [basePath] prefix.  If the path is already relative or
+  /// cannot be stripped, [ph] is returned unchanged.
+  static AppPhoto _withRelativePath(AppPhoto ph, String basePath) {
+    final path = ph.pathOrData;
+    if (!p.isAbsolute(path)) return ph; // already relative
+    final prefix = basePath.endsWith(p.separator)
+        ? basePath
+        : '$basePath${p.separator}';
+    if (!path.startsWith(prefix)) return ph; // unknown prefix, leave as-is
+    final rel = path.substring(prefix.length);
+    if (rel == path) return ph;
+    return AppPhoto(
+      id:        ph.id,
+      ownerType: ph.ownerType,
+      ownerId:   ph.ownerId,
+      createdAt: ph.createdAt,
+      pathOrData: rel,
+      remoteUrl: ph.remoteUrl,
+    );
+  }
 }
