@@ -316,7 +316,13 @@ class _AppShellState extends State<AppShell> {
           final created = await Navigator.of(context).push<Vehicle>(
             MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
           );
-          if (created != null) await _addVehicle(created);
+          if (created == null || !context.mounted) return;
+          await _addVehicle(created);
+          if (!context.mounted) return;
+          final updated = await Navigator.of(context).push<Vehicle>(
+            MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: _vehicles)),
+          );
+          if (updated != null) await _updateVehicle(updated);
         },
         onViewVehicles: () => setState(() => _tab = 1),
         onSearchParts:  () => setState(() => _tab = 2),
@@ -2111,7 +2117,13 @@ class _VehiclesHomeState extends State<VehiclesHome> {
           final created = await Navigator.of(context).push<Vehicle>(
             MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
           );
-          if (created != null) await onAddVehicle(created);
+          if (created == null || !context.mounted) return;
+          await onAddVehicle(created);
+          if (!context.mounted) return;
+          final updated = await Navigator.of(context).push<Vehicle>(
+            MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: widget.vehicles)),
+          );
+          if (updated != null) await onUpdateVehicle(updated);
         },
         icon: const Icon(Icons.add),
         label: const Text('Add Vehicle'),
@@ -2237,7 +2249,13 @@ class _VehiclesHomeState extends State<VehiclesHome> {
                         final created = await Navigator.of(context).push<Vehicle>(
                           MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
                         );
-                        if (created != null) await onAddVehicle(created);
+                        if (created == null || !context.mounted) return;
+                        await onAddVehicle(created);
+                        if (!context.mounted) return;
+                        final updated = await Navigator.of(context).push<Vehicle>(
+                          MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: widget.vehicles)),
+                        );
+                        if (updated != null) await onUpdateVehicle(updated);
                       },
                     )
                   else if (filtered.isEmpty)
