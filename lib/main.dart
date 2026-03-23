@@ -8844,7 +8844,10 @@ class _StatsTabState extends State<StatsTab> {
                 const Text('Inventory', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white54)),
                 const SizedBox(height: 12),
                 Row(children: [
-                  statBox('${widget.vehicles.length}', 'Vehicles'),
+                  statBox('${widget.vehicles.length}', 'Vehicles',
+                    onTap: widget.vehicles.isEmpty ? null : () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => _StatsVehicleListScreen(vehicles: widget.vehicles)),
+                    )),
                   gap,
                   statBox('$_totalParts', 'Parts'),
                   gap,
@@ -9601,6 +9604,75 @@ class _StatsPartListScreen extends StatelessWidget {
                 );
               },
             ),
+    );
+  }
+}
+
+class _StatsVehicleListScreen extends StatelessWidget {
+  final List<Vehicle> vehicles;
+  const _StatsVehicleListScreen({required this.vehicles});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('All Vehicles (${vehicles.length})')),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(kPad),
+        itemCount: vehicles.length,
+        itemBuilder: (ctx, i) {
+          final v = vehicles[i];
+          final pl = v.profitLossCents;
+          final plColor = profitColor(pl);
+          final isCompleted = v.status == VehicleStatus.shellGone;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Opacity(
+              opacity: isCompleted ? 0.5 : 1.0,
+              child: ListTile(
+                leading: Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFE8700A).withValues(alpha: 0.12),
+                  ),
+                  child: Icon(
+                    switch (v.itemType) {
+                      ItemType.car        => Icons.directions_car,
+                      ItemType.motorcycle => Icons.two_wheeler,
+                      ItemType.boat       => Icons.directions_boat,
+                      ItemType.tractor    => Icons.agriculture,
+                      ItemType.other      => Icons.category,
+                    },
+                    size: 20,
+                    color: isCompleted ? Colors.grey : const Color(0xFFE8700A),
+                  ),
+                ),
+                title: Text(
+                  _titleOrFallback(v),
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                subtitle: Text(
+                  '${v.partsCount} parts  ·  ${v.inStockCount} in stock'
+                  '${isCompleted ? '  ·  Shell Gone' : ''}',
+                  style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.45)),
+                ),
+                trailing: v.partsCount > 0
+                    ? Text(
+                        'P/L ${formatMoneyFromCents(pl)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: plColor,
+                        ),
+                      )
+                    : null,
+                tileColor: Colors.white.withValues(alpha: 0.04),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
