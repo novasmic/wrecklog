@@ -5512,38 +5512,38 @@ class _AddPartScreenState extends State<AddPartScreen> {
       }
     }
     if (best == null) return;
+    final b = best; // non-nullable local for use inside setState closure
 
     bool filled = false;
     setState(() {
       if (_nameCtrl.text.isEmpty) {
-        _nameCtrl.text = best!.name;
+        _nameCtrl.text = b.name;
         filled = true;
       }
-      if (_category == null && best!.category != null) {
-        _category = best!.category;
+      if (_category == null && b.category != null) {
+        _category = b.category;
         filled = true;
       }
-      if (_conditionCtrl.text.isEmpty && best!.partCondition != null) {
-        _conditionCtrl.text = best!.partCondition!;
+      if (_conditionCtrl.text.isEmpty && b.partCondition != null) {
+        _conditionCtrl.text = b.partCondition!;
         filled = true;
       }
-      if (_side == null && best!.side != null) {
-        _side = best!.side;
+      if (_side == null && b.side != null) {
+        _side = b.side;
         filled = true;
       }
-      if (_locCtrl.text.isEmpty && (best!.location ?? '').isNotEmpty) {
-        _locCtrl.text = best!.location!;
+      if (_locCtrl.text.isEmpty && (b.location ?? '').isNotEmpty) {
+        _locCtrl.text = b.location!;
         filled = true;
       }
-      if (best!.askingPriceCents != null) {
-        _priceHint = 'Last used: ${formatMoneyFromCents(best!.askingPriceCents!)}';
+      if (b.askingPriceCents != null) {
+        _priceHint = 'Last used: ${formatMoneyFromCents(b.askingPriceCents!)}';
       }
-      if (_notesCtrl.text.isEmpty && (best!.notes ?? '').isNotEmpty) {
-        _notesCtrl.text = best!.notes!;
+      if (_notesCtrl.text.isEmpty && (b.notes ?? '').isNotEmpty) {
+        _notesCtrl.text = b.notes!;
         filled = true;
       }
-      // Set category suggestion too
-      if (best!.category != null) _suggestedCategory = best!.category;
+      if (b.category != null) _suggestedCategory = b.category;
     });
 
     if (filled && mounted) {
@@ -5685,6 +5685,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
       dateSold: _dateSold,
     );
 
+    if (!mounted) return;
     Navigator.of(context).pop(p);
   }
 

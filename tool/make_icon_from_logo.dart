@@ -134,6 +134,7 @@ void main() {
 
   // Save transparent version (Android fg)
   File('assets/icon/icon_fg.png').writeAsBytesSync(img.encodePng(scaled));
+  // ignore: avoid_print
   print('Done — assets/icon/icon_fg.png (transparent background, cropped)');
 
   // iOS version: composite onto dark background (#1A1A1A)
@@ -141,5 +142,6 @@ void main() {
   img.fill(bg, color: img.ColorRgb8(0x1A, 0x1A, 0x1A));
   img.compositeImage(bg, scaled);
   File('assets/icon/icon_ios.png').writeAsBytesSync(img.encodePng(bg));
+  // ignore: avoid_print
   print('Done — assets/icon/icon_ios.png (dark background for iOS)');
 }

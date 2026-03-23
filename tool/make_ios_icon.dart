@@ -29,5 +29,6 @@ void main() {
   // Save
   final outBytes = img.encodePng(bg);
   File('assets/icon/icon_ios.png').writeAsBytesSync(outBytes);
+  // ignore: avoid_print
   print('Done — assets/icon/icon_ios.png created.');
 }
