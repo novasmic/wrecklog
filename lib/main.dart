@@ -5459,9 +5459,12 @@ class PartCard extends StatelessWidget {
                 ? ('Listed',  Colors.green,          false)
                 : ('In Stock', Colors.white38,       false);
 
-    // ── Missing data indicator ────────────────────────────────────────────────
-    final hasMissingData = !isSold && !isScrapped &&
-        (part.category == null || part.askingPriceCents == null);
+    // ── Missing data indicators (only for in-stock parts) ───────────────────
+    final showMissing = !isSold && !isScrapped;
+    final missingCategory = showMissing && (part.category ?? '').trim().isEmpty;
+    final missingPrice    = showMissing && part.askingPriceCents == null;
+    final missingPhotos   = showMissing && part.photoIds.isEmpty;
+    final missingListing  = showMissing && !part.listings.any((l) => l.url.trim().isNotEmpty);
 
     // ── Left bar colour ───────────────────────────────────────────────────────
     final barColor = isScrapped
@@ -5543,23 +5546,28 @@ class PartCard extends StatelessWidget {
                       ),
                       if (part.photoIds.isNotEmpty) ...[
                         const SizedBox(width: 4),
-                        const Icon(Icons.photo_camera, size: 11, color: Colors.white30),
+                        Icon(Icons.photo_camera, size: 11, color: Colors.white.withValues(alpha: 0.3)),
                         const SizedBox(width: 2),
                         Text(
                           '${part.photoIds.length}',
-                          style: const TextStyle(fontSize: 10, color: Colors.white30),
+                          style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.3)),
                         ),
                       ],
-                      if (hasMissingData) ...[
-                        const SizedBox(width: 4),
-                        Container(
-                          width: 7, height: 7,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFE8700A),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ],
+                      // Missing data icons — only shown for in-stock parts
+                      if (missingCategory || missingPrice || missingPhotos || missingListing)
+                        const SizedBox(width: 6),
+                      if (missingCategory)
+                        const Padding(padding: EdgeInsets.only(right: 3),
+                          child: Icon(Icons.label_off_outlined, size: 13, color: Colors.blue)),
+                      if (missingPrice)
+                        const Padding(padding: EdgeInsets.only(right: 3),
+                          child: Icon(Icons.money_off, size: 13, color: Color(0xFFE8700A))),
+                      if (missingPhotos)
+                        const Padding(padding: EdgeInsets.only(right: 3),
+                          child: Icon(Icons.no_photography_outlined, size: 13, color: Colors.purple)),
+                      if (missingListing)
+                        const Padding(padding: EdgeInsets.only(right: 3),
+                          child: Icon(Icons.link_off, size: 13, color: Colors.green)),
                     ]),
                     const SizedBox(height: 3),
                     Text(
