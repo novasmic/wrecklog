@@ -5463,7 +5463,6 @@ class PartCard extends StatelessWidget {
     final showMissing = !isSold && !isScrapped;
     final missingCategory = showMissing && (part.category ?? '').trim().isEmpty;
     final missingPrice    = showMissing && part.askingPriceCents == null;
-    final missingPhotos   = showMissing && part.photoIds.isEmpty;
     final missingListing  = showMissing && !part.listings.any((l) => l.url.trim().isNotEmpty);
 
     // ── Left bar colour ───────────────────────────────────────────────────────
@@ -5544,17 +5543,8 @@ class PartCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (part.photoIds.isNotEmpty) ...[
-                        const SizedBox(width: 4),
-                        Icon(Icons.photo_camera, size: 11, color: Colors.white.withValues(alpha: 0.3)),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${part.photoIds.length}',
-                          style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.3)),
-                        ),
-                      ],
                       // Missing data icons — only shown for in-stock parts
-                      if (missingCategory || missingPrice || missingPhotos || missingListing)
+                      if (missingCategory || missingPrice || missingListing)
                         const SizedBox(width: 6),
                       if (missingCategory)
                         const Padding(padding: EdgeInsets.only(right: 3),
@@ -5562,9 +5552,6 @@ class PartCard extends StatelessWidget {
                       if (missingPrice)
                         const Padding(padding: EdgeInsets.only(right: 3),
                           child: Icon(Icons.money_off, size: 13, color: Color(0xFFE8700A))),
-                      if (missingPhotos)
-                        const Padding(padding: EdgeInsets.only(right: 3),
-                          child: Icon(Icons.no_photography_outlined, size: 13, color: Colors.purple)),
                       if (missingListing)
                         const Padding(padding: EdgeInsets.only(right: 3),
                           child: Icon(Icons.link_off, size: 13, color: Colors.green)),
@@ -8742,9 +8729,8 @@ class _StatsTabState extends State<StatsTab> {
         if (inStock) {
           final hasCategory = (p.category ?? '').trim().isNotEmpty;
           final hasPrice = p.askingPriceCents != null;
-          final hasPhotos = p.photoIds.isNotEmpty;
           final hasListingLink = p.listings.any((l) => l.url.trim().isNotEmpty);
-          if (!hasCategory || !hasPrice || !hasPhotos || !hasListingLink) {
+          if (!hasCategory || !hasPrice || !hasListingLink) {
             needsAttention.add((
               vehicleTitle: StatsTab._vehicleTitle(v),
               part: p,
@@ -9100,7 +9086,6 @@ class _StatsTabState extends State<StatsTab> {
                     children: [
                       _AttentionLegendItem(icon: Icons.label_outline, label: 'Category', color: Colors.blue),
                       _AttentionLegendItem(icon: Icons.attach_money, label: 'Price', color: Color(0xFFE8700A)),
-                      _AttentionLegendItem(icon: Icons.photo_camera_outlined, label: 'Photos', color: Colors.purple),
                       _AttentionLegendItem(icon: Icons.link, label: 'Listing', color: Colors.green),
                     ],
                   ),
@@ -9108,7 +9093,6 @@ class _StatsTabState extends State<StatsTab> {
                   ..._needsAttention.take(15).map((r) {
                     final noCategory  = (r.part.category ?? '').trim().isEmpty;
                     final noPrice     = r.part.askingPriceCents == null;
-                    final noPhotos    = r.part.photoIds.isEmpty;
                     final noListing   = !r.part.listings.any((l) => l.url.trim().isNotEmpty);
                     return InkWell(
                       borderRadius: BorderRadius.circular(10),
@@ -9146,10 +9130,6 @@ class _StatsTabState extends State<StatsTab> {
                                   const Padding(padding: EdgeInsets.only(left: 4),
                                     child: Tooltip(message: 'No asking price',
                                       child: Icon(Icons.attach_money, size: 16, color: Color(0xFFE8700A)))),
-                                if (noPhotos)
-                                  const Padding(padding: EdgeInsets.only(left: 4),
-                                    child: Tooltip(message: 'No photos',
-                                      child: Icon(Icons.photo_camera_outlined, size: 16, color: Colors.purple))),
                                 if (noListing)
                                   const Padding(padding: EdgeInsets.only(left: 4),
                                     child: Tooltip(message: 'No listing link',
