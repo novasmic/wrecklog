@@ -1,7 +1,7 @@
 // tool/make_icon_from_logo.dart
-// Strips white background from Wrecklog_logo.png, then produces:
+// Strips black background from Wrecklog_logo.png, then produces:
 //   assets/icon/icon_fg.png  — transparent background (Android)
-//   assets/icon/icon_ios.png — white background removed, dark bg (iOS, no alpha)
+//   assets/icon/icon_ios.png — black background removed, dark bg (iOS, no alpha)
 // Run with: dart run tool/make_icon_from_logo.dart
 
 import 'dart:io';
@@ -22,9 +22,9 @@ void main() {
   final resized = img.copyResize(src, width: size, height: size,
       interpolation: img.Interpolation.cubic);
 
-  // Use flood-fill from all four corners to find background pixels.
-  // This avoids removing white pixels inside the logo (e.g. the "Log" text).
-  const threshold = 230;
+  // Use flood-fill from all four edges to find background pixels.
+  // Background is black/near-black — threshold is max channel value to qualify.
+  const threshold = 25;
   final transparent = img.Image(width: size, height: size, numChannels: 4);
 
   // Copy all pixels across first.
@@ -35,14 +35,14 @@ void main() {
     }
   }
 
-  // BFS flood-fill from each corner — mark background pixels.
+  // BFS flood-fill from each edge — mark black background pixels.
   final visited = List.generate(size, (_) => List.filled(size, false));
   final queue = <(int, int)>[];
 
   bool isBackground(int x, int y) {
     if (visited[y][x]) return false;
     final px = resized.getPixel(x, y);
-    return px.r.toInt() > threshold && px.g.toInt() > threshold && px.b.toInt() > threshold;
+    return px.r.toInt() <= threshold && px.g.toInt() <= threshold && px.b.toInt() <= threshold;
   }
 
   void enqueue(int x, int y) {
@@ -72,9 +72,9 @@ void main() {
   }
 
   // Second pass: clean up fringe — any pixel adjacent to a transparent pixel
-  // that is near-white gets its alpha reduced proportionally to its whiteness.
-  // This removes the anti-aliased white halo without touching interior whites.
-  const fringeThreshold = 200;
+  // that is near-black gets its alpha reduced proportionally to its darkness.
+  // This removes the anti-aliased black halo without touching interior darks.
+  const fringeThreshold = 55;
   for (int y = 0; y < size; y++) {
     for (int x = 0; x < size; x++) {
       final px = transparent.getPixel(x, y);
@@ -94,11 +94,11 @@ void main() {
       final r = px.r.toInt();
       final g = px.g.toInt();
       final b = px.b.toInt();
-      // Whiteness 0..255
-      final whiteness = (r + g + b) ~/ 3;
-      if (whiteness > fringeThreshold) {
-        // Scale alpha down — the whiter the pixel, the more transparent it becomes.
-        final newAlpha = ((255 - whiteness) * 255 ~/ (255 - fringeThreshold)).clamp(0, 255);
+      // Darkness 0..255 (0 = bright, 255 = black)
+      final darkness = 255 - (r + g + b) ~/ 3;
+      if (darkness > (255 - fringeThreshold)) {
+        // Scale alpha down — the darker the pixel, the more transparent it becomes.
+        final newAlpha = ((255 - darkness) * 255 ~/ fringeThreshold).clamp(0, 255);
         transparent.setPixelRgba(x, y, r, g, b, newAlpha);
       }
     }
@@ -129,9 +129,24 @@ void main() {
 
   final cropped = img.copyCrop(transparent, x: cropX, y: cropY, width: cropW, height: cropH);
 
-  // Scale cropped content back to 1024x1024.
-  final scaled = img.copyResize(cropped, width: size, height: size,
+  // Scale cropped content back to 1024x1024, preserving aspect ratio.
+  final srcAspect = cropW / cropH;
+  final int scaledW, scaledH;
+  if (srcAspect >= 1.0) {
+    scaledW = size;
+    scaledH = (size / srcAspect).round();
+  } else {
+    scaledH = size;
+    scaledW = (size * srcAspect).round();
+  }
+  final scaledContent = img.copyResize(cropped, width: scaledW, height: scaledH,
       interpolation: img.Interpolation.cubic);
+
+  // Centre on a 1024x1024 transparent canvas.
+  final scaled = img.Image(width: size, height: size, numChannels: 4);
+  final offsetX = (size - scaledW) ~/ 2;
+  final offsetY = (size - scaledH) ~/ 2;
+  img.compositeImage(scaled, scaledContent, dstX: offsetX, dstY: offsetY);
 
   // Save transparent version (Android fg)
   File('assets/icon/icon_fg.png').writeAsBytesSync(img.encodePng(scaled));
