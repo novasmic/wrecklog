@@ -14,10 +14,16 @@ class LandingScreen extends StatelessWidget {
         children: [
           // ── Hero background ─────────────────────────────────────────────
           Positioned.fill(
-            child: Image.asset(
-              'assets/hero_dismantled_car.png',
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
+            child: LayoutBuilder(
+              builder: (context, constraints) => Image.asset(
+                'assets/hero_dismantled_car.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                // Decode at display resolution (2x for high-DPI) to avoid
+                // loading the full 2.4 MB image into memory.
+                cacheWidth: (constraints.maxWidth * 2).toInt(),
+                cacheHeight: (constraints.maxHeight * 2).toInt(),
+              ),
             ),
           ),
           Positioned.fill(

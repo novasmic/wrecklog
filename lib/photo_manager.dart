@@ -285,7 +285,9 @@ class _Thumbnail extends StatelessWidget {
           SizedBox(
             width: 90, height: 90,
             child: Image(
-              image: _imageProviderFor(photo),
+              // ResizeImage decodes at 2× display size, avoiding full-res
+              // JPEG held in memory for each thumbnail.
+              image: ResizeImage(_imageProviderFor(photo), width: 180, height: 180),
               fit: BoxFit.cover, width: 90, height: 90,
               errorBuilder: (_, __, ___) => Container(
                 color: Colors.white10,

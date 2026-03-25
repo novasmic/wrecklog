@@ -2088,6 +2088,27 @@ class _VehiclesHomeState extends State<VehiclesHome> {
   // Cached painter — never recreated on setState, avoids object churn.
   final _grainPainter = LeatherGrainPainter();
 
+  // Memoised totals — recomputed only when the vehicle list changes.
+  int _totalPurchase = 0;
+  int _totalRevenue = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _recalcTotals();
+  }
+
+  @override
+  void didUpdateWidget(VehiclesHome old) {
+    super.didUpdateWidget(old);
+    if (old.vehicles != widget.vehicles) _recalcTotals();
+  }
+
+  void _recalcTotals() {
+    _totalPurchase = widget.vehicles.fold<int>(0, (s, v) => s + (v.purchasePriceCents ?? 0));
+    _totalRevenue  = widget.vehicles.fold<int>(0, (s, v) => s + v.soldRevenueCents);
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -2132,9 +2153,7 @@ class _VehiclesHomeState extends State<VehiclesHome> {
     final onDeleteVehicle = widget.onDeleteVehicle;
     final loading = widget.loading;
 
-    final totalPurchase = vehicles.fold<int>(0, (s, v) => s + (v.purchasePriceCents ?? 0));
-    final totalRevenue = vehicles.fold<int>(0, (s, v) => s + v.soldRevenueCents);
-    final totalPL = totalRevenue - totalPurchase;
+    final totalPL = _totalRevenue - _totalPurchase;
     final plColor = profitColor(totalPL);
 
     final filtered = _filtered();
@@ -4369,6 +4388,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                 ],
               ),
               children: catParts.map((p) => Padding(
+                key: ValueKey(p.id),
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                 child: GestureDetector(
                   onTap: _selectMode
@@ -5455,6 +5475,7 @@ class _SearchGroupDrillScreen extends StatelessWidget {
         itemBuilder: (ctx, i) {
           final hit = group.hits[i];
           return PartListRow(
+            key: ValueKey(hit.part.id),
             part: hit.part,
             vehicle: hit.vehicle,
             onTap: () => Navigator.of(ctx).push(
@@ -8678,7 +8699,10 @@ class _StatsTabState extends State<StatsTab> {
   void didUpdateWidget(StatsTab old) {
     super.didUpdateWidget(old);
     if (old.vehicles != widget.vehicles || old.loading != widget.loading) {
-      _computeStats();
+      // Schedule after the current frame so the tab switch renders first.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _computeStats();
+      });
     }
   }
 
