@@ -81,13 +81,17 @@ class BillingService extends ChangeNotifier {
 
   // ── Purchase ───────────────────────────────────────────────────────────────
   Future<void> buyMonthly() async {
-    if (!isAvailable || monthlyProduct == null) return;
+    if (!isAvailable || monthlyProduct == null) {
+      throw Exception('Monthly subscription not available. Please check your connection and try again.');
+    }
     final param = PurchaseParam(productDetails: monthlyProduct!);
     await _iap.buyNonConsumable(purchaseParam: param);
   }
 
   Future<void> buyYearly() async {
-    if (!isAvailable || yearlyProduct == null) return;
+    if (!isAvailable || yearlyProduct == null) {
+      throw Exception('Yearly subscription not available. Please check your connection and try again.');
+    }
     final param = PurchaseParam(productDetails: yearlyProduct!);
     await _iap.buyNonConsumable(purchaseParam: param);
   }

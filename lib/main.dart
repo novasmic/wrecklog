@@ -1237,12 +1237,53 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
             style: TextStyle(color: Colors.white38, fontSize: 11),
             textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => launchUrl(Uri.parse(
+                    'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')),
+                child: const Text('Terms of Use',
+                    style: TextStyle(fontSize: 10, color: Colors.white38)),
+              ),
+              const Text('  ·  ',
+                  style: TextStyle(fontSize: 10, color: Colors.white38)),
+              TextButton(
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => launchUrl(Uri.parse('https://novasmic.com.au')),
+                child: const Text('Privacy Policy',
+                    style: TextStyle(fontSize: 10, color: Colors.white38)),
+              ),
+            ],
+          ),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Not now'),
+        ),
+        TextButton(
+          onPressed: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            final nav = Navigator.of(context);
+            await billing.restore();
+            if (mounted) nav.pop();
+            messenger.showSnackBar(
+              const SnackBar(content: Text('Purchases restored.')),
+            );
+          },
+          child: const Text('Restore', style: TextStyle(color: Colors.white54)),
         ),
       ],
     );
