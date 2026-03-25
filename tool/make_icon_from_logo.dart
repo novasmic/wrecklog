@@ -149,10 +149,25 @@ void main() {
   final offsetY = (size - scaledH) ~/ 2;
   img.compositeImage(scaled, scaledContent, dstX: offsetX, dstY: offsetY);
 
-  // Save transparent version (Android fg)
+  // Save transparent version (Android fg + home screen)
   File('assets/icon/icon_fg.png').writeAsBytesSync(img.encodePng(scaled));
   // ignore: avoid_print
   print('Done — assets/icon/icon_fg.png (transparent background, cropped)');
+
+  // Adaptive foreground: scale logo down to 60% so it fits within Android's
+  // inner 66% safe zone, then centre on a 1024x1024 transparent canvas.
+  const safeScale = 0.60;
+  final adaptiveSize = (size * safeScale).round();
+  final adaptiveContent = img.copyResize(scaledContent,
+      width: adaptiveSize, height: (adaptiveSize / srcAspect).round(),
+      interpolation: img.Interpolation.cubic);
+  final adaptive = img.Image(width: size, height: size, numChannels: 4);
+  final aOffsetX = (size - adaptiveContent.width) ~/ 2;
+  final aOffsetY = (size - adaptiveContent.height) ~/ 2;
+  img.compositeImage(adaptive, adaptiveContent, dstX: aOffsetX, dstY: aOffsetY);
+  File('assets/icon/icon_adaptive_fg.png').writeAsBytesSync(img.encodePng(adaptive));
+  // ignore: avoid_print
+  print('Done — assets/icon/icon_adaptive_fg.png (60% safe zone, adaptive foreground)');
 
   // iOS version: composite onto dark background (#1A1A1A)
   final bg = img.Image(width: size, height: size);
