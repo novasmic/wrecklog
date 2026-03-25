@@ -104,12 +104,13 @@ void main() {
     }
   }
 
-  // Auto-crop: find bounding box of non-transparent pixels.
+  // Auto-crop: find bounding box of sufficiently opaque pixels.
+  // Use threshold > 30 to ignore faint anti-alias fringe that bloats the box.
   int minX = size, maxX = 0, minY = size, maxY = 0;
   for (int y = 0; y < size; y++) {
     for (int x = 0; x < size; x++) {
       final px = transparent.getPixel(x, y);
-      if (px.a.toInt() > 0) {
+      if (px.a.toInt() > 30) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -161,12 +162,38 @@ void main() {
   // ignore: avoid_print
   print('Done — assets/icon/icon_ios.png (dark background for iOS)');
 
-  // Home screen version: composite onto the app home screen background colour
-  // (#0F1318) so there are no transparency issues on any platform.
-  final homeBg = img.Image(width: size, height: size);
-  img.fill(homeBg, color: img.ColorRgb8(0x0F, 0x13, 0x18));
-  img.compositeImage(homeBg, scaled);
-  File('assets/icon/icon_home.png').writeAsBytesSync(img.encodePng(homeBg));
+  // Home screen version: crop the ORIGINAL logo (no stripping) to just the
+  // content area, scaled to 1024px wide at natural aspect ratio.
+  // This preserves all black outlines (part of the design) and avoids any
+  // visible border when displayed with BoxFit.contain on the dark home screen.
+  const contentThreshold = 40; // pixel is "content" if any channel > this
+  int hMinX = src.width, hMaxX = 0, hMinY = src.height, hMaxY = 0;
+  for (int y = 0; y < src.height; y++) {
+    for (int x = 0; x < src.width; x++) {
+      final px = src.getPixel(x, y);
+      if (px.r.toInt() > contentThreshold ||
+          px.g.toInt() > contentThreshold ||
+          px.b.toInt() > contentThreshold) {
+        if (x < hMinX) hMinX = x;
+        if (x > hMaxX) hMaxX = x;
+        if (y < hMinY) hMinY = y;
+        if (y > hMaxY) hMaxY = y;
+      }
+    }
+  }
+  final padPx = ((hMaxX - hMinX) * 0.03).toInt();
+  final hCropX = (hMinX - padPx).clamp(0, src.width - 1);
+  final hCropY = (hMinY - padPx).clamp(0, src.height - 1);
+  final hCropW = (hMaxX - hMinX + padPx * 2 + 1).clamp(1, src.width - hCropX);
+  final hCropH = (hMaxY - hMinY + padPx * 2 + 1).clamp(1, src.height - hCropY);
+
+  final homeCropped = img.copyCrop(src,
+      x: hCropX, y: hCropY, width: hCropW, height: hCropH);
+  final homeScaledH = (size * hCropH / hCropW).round();
+  final homeScaled = img.copyResize(homeCropped,
+      width: size, height: homeScaledH,
+      interpolation: img.Interpolation.cubic);
+  File('assets/icon/icon_home.png').writeAsBytesSync(img.encodePng(homeScaled));
   // ignore: avoid_print
-  print('Done — assets/icon/icon_home.png (home screen background colour)');
+  print('Done — assets/icon/icon_home.png (${size}x$homeScaledH, natural aspect)');
 }
