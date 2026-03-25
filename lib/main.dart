@@ -10051,7 +10051,7 @@ class _SettingsTabState extends State<SettingsTab> {
                   onTap: () {
                     final subject = Uri.encodeComponent('Bug Report - WreckLog v$_version');
                     final body = Uri.encodeComponent('Describe the bug:\n\n\nSteps to reproduce:\n\n\nApp version: $_version\nPlatform: ${defaultTargetPlatform.name}');
-                    launchUrl(Uri.parse('mailto:novasmic.au@gmail.com?subject=$subject&body=$body'));
+                    launchUrl(Uri.parse('mailto:wrecklog@gmail.com?subject=$subject&body=$body'));
                   },
                 ),
                 const Divider(color: Colors.white12, height: 1),
@@ -10062,7 +10062,7 @@ class _SettingsTabState extends State<SettingsTab> {
                   onTap: () {
                     final subject = Uri.encodeComponent('Feature Request - WreckLog v$_version');
                     final body = Uri.encodeComponent('Describe the feature:\n\n\nWhy would it be useful:\n\n\nApp version: $_version\nPlatform: ${defaultTargetPlatform.name}');
-                    launchUrl(Uri.parse('mailto:novasmic.au@gmail.com?subject=$subject&body=$body'));
+                    launchUrl(Uri.parse('mailto:wrecklog@gmail.com?subject=$subject&body=$body'));
                   },
                 ),
               ],
