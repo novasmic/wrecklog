@@ -1166,15 +1166,14 @@ class _ProPaywallDialog extends StatefulWidget {
 }
 
 class _ProPaywallDialogState extends State<_ProPaywallDialog> {
-  bool _loading = false;
+  // null = no purchase in progress; 'yearly'/'monthly' = that plan is loading.
+  String? _loadingPlan;
+  // Which plan is highlighted — yearly by default.
+  String _selectedPlan = 'yearly';
 
-  Future<void> _buy(Future<void> Function() purchase) async {
-    // Show spinner inside dialog while purchase is in progress.
-    // Only pop once the async work is done so setState is never called
-    // on a disposed widget.
+  Future<void> _buy(String plan, Future<void> Function() purchase) async {
     if (!mounted) return;
-    setState(() => _loading = true);
-    // Capture the scaffold messenger before any async gap.
+    setState(() { _loadingPlan = plan; _selectedPlan = plan; });
     final messenger = ScaffoldMessenger.of(context);
     try {
       await purchase();
@@ -1185,14 +1184,12 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
       );
     } catch (e) {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() => _loadingPlan = null);
         messenger.showSnackBar(
           SnackBar(content: Text('Purchase failed: $e')),
         );
       }
     }
-    // No finally setState — if we succeeded we already popped (disposed).
-    // If we failed we already called setState above while still mounted.
   }
 
   @override
@@ -1213,14 +1210,14 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
               style: const TextStyle(color: Colors.white70, fontSize: 13)),
           const SizedBox(height: 20),
 
-          // ── Yearly plan (highlighted) ────────────────────────────────
+          // ── Yearly plan ──────────────────────────────────────────────
           _PlanTile(
             label: 'Yearly',
             price: '${billing.yearlyPrice} / year',
             badge: '2 months free',
-            highlight: true,
-            loading: _loading,
-            onTap: () => _buy(billing.buyYearly),
+            highlight: _selectedPlan == 'yearly',
+            loading: _loadingPlan == 'yearly',
+            onTap: _loadingPlan != null ? null : () => _buy('yearly', billing.buyYearly),
           ),
           const SizedBox(height: 10),
 
@@ -1229,9 +1226,9 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
             label: 'Monthly',
             price: '${billing.monthlyPrice} / month',
             badge: null,
-            highlight: false,
-            loading: _loading,
-            onTap: () => _buy(billing.buyMonthly),
+            highlight: _selectedPlan == 'monthly',
+            loading: _loadingPlan == 'monthly',
+            onTap: _loadingPlan != null ? null : () => _buy('monthly', billing.buyMonthly),
           ),
 
           const SizedBox(height: 12),
@@ -1299,7 +1296,7 @@ class _PlanTile extends StatelessWidget {
   final String? badge;
   final bool highlight;
   final bool loading;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _PlanTile({
     required this.label,

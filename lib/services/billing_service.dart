@@ -40,9 +40,10 @@ class BillingService extends ChangeNotifier {
   bool _sawAnyCallback    = false;
 
   // ── Price getters ──────────────────────────────────────────────────────────
-  // Return Play Store localised price when available, fall back to AUD strings.
-  String get monthlyPrice => monthlyProduct?.price ?? r'$4.99';
-  String get yearlyPrice  => yearlyProduct?.price  ?? r'$39.99';
+  // Return App Store / Play Store localised price when available.
+  // Shows 'Loading…' if products haven't loaded yet — avoids showing wrong currency.
+  String get monthlyPrice => monthlyProduct?.price ?? 'Loading…';
+  String get yearlyPrice  => yearlyProduct?.price  ?? 'Loading…';
 
   // ── Init ───────────────────────────────────────────────────────────────────
   Future<void> init() async {
