@@ -51,5 +51,9 @@
 	<string>WreckLog uses your camera to take photos of vehicles and parts.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>WreckLog saves your part and vehicle photos to your photo library for backup and sharing.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>mailto</string>
+	</array>
 </dict>
 </plist>
