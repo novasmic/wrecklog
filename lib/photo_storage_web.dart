@@ -140,8 +140,8 @@ class PhotoStorage {
             .toList();
     // Belt-and-braces: enforce max even if UI check is bypassed
     if (list.length >= kMaxPhotosPerOwner) {
-      throw StateError(
-          'Photo limit reached for $ownerType $ownerId — max $kMaxPhotosPerOwner.');
+      throw Exception(
+          'Photo limit reached — max $kMaxPhotosPerOwner photos per item.');
     }
     list.add(photo);
     await prefs.setString(

@@ -62,7 +62,7 @@ class PartCategoryStorage {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await billing.init();
-  await _loadDebugProFlag();
+  if (kDebugMode) await _loadDebugProFlag();
   await PresetGroupStorage.migrate(); // one-time preset key migration // no-op in release
   runApp(const WreckLogApp());
 }
@@ -1129,18 +1129,20 @@ const Map<String, String> kPartCategorySuggestions = {
 const String _kDebugProKey = 'debug_pro_enabled';
 bool _debugProOverride = false; // in-memory mirror; loaded once at startup
 
-/// True if billing says Pro OR the local testing override is on.
+/// True if billing says Pro OR the local testing override is on (debug only).
 bool get isPro {
-  if (_debugProOverride) return true;
+  if (kDebugMode && _debugProOverride) return true;
   return billing.isPro;
 }
 
 Future<void> _loadDebugProFlag() async {
+  assert(kDebugMode, '_loadDebugProFlag must only be called in debug mode');
   final prefs = await SharedPreferences.getInstance();
   _debugProOverride = prefs.getBool(_kDebugProKey) ?? false;
 }
 
 Future<void> _saveDebugProFlag(bool value) async {
+  assert(kDebugMode, '_saveDebugProFlag must only be called in debug mode');
   _debugProOverride = value;
   final prefs = await SharedPreferences.getInstance();
   await prefs.setBool(_kDebugProKey, value);
@@ -1462,7 +1464,9 @@ Uri? _safeParseUrl(String raw) {
   if (!candidate.startsWith('http://') && !candidate.startsWith('https://')) {
     return null;
   }
-  return Uri.tryParse(candidate);
+  final uri = Uri.tryParse(candidate);
+  if (uri == null || uri.host.isEmpty) return null;
+  return uri;
 }
 
 Future<void> openUrlEasy(BuildContext context, String url) async {
@@ -1478,7 +1482,8 @@ Future<void> openUrlEasy(BuildContext context, String url) async {
     if (!ok && context.mounted) {
       await copyToClipboard(context, url, message: 'Could not open - link copied');
     }
-  } catch (_) {
+  } catch (e) {
+    if (kDebugMode) debugPrint('openUrlEasy failed: $e');
     if (context.mounted) {
       await copyToClipboard(context, url, message: 'Could not open - link copied');
     }
@@ -1893,7 +1898,8 @@ class PresetGroupStorage {
         }
         final matchCount = carOnlyTerms.where((t) => allParts.contains(t)).length;
         if (matchCount >= contaminationThreshold) await prefs.remove(key);
-      } catch (_) {
+      } catch (e) {
+        if (kDebugMode) debugPrint('PresetGroupStorage.migrate: corrupt key $key — wiping: $e');
         await prefs.remove(key); // corrupt data — safe to wipe
       }
     }
@@ -1910,7 +1916,8 @@ class PresetGroupStorage {
     try {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       return decoded.map((k, v) => MapEntry(k, List<String>.from(v as List)));
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) debugPrint('PresetGroupStorage.load failed: $e');
       return _deepCopy(defaultGroupedPresets[type] ?? defaultGroupedPresets[ItemType.other]!);
     }
   }
@@ -2960,7 +2967,8 @@ class RecentModelStorage {
     if (raw == null || raw.trim().isEmpty) return [];
     try {
       return List<String>.from(jsonDecode(raw) as List);
-    } catch (_) {
+    } catch (e) {
+      if (kDebugMode) debugPrint('RecentModelStorage.load failed: $e');
       return [];
     }
   }
@@ -5390,7 +5398,8 @@ class _PartGroup {
   /// Consistent part name across all hits, or "Multiple" if mixed.
   String get commonName {
     if (hits.isEmpty) return '';
-    final first = hits.first.part.name.trim();
+    final firstHit = hits.first;
+    final first = firstHit.part.name.trim();
     return hits.every((h) => h.part.name.trim().toLowerCase() == first.toLowerCase())
         ? first
         : 'Multiple';
@@ -10215,8 +10224,10 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
 
       List<dynamic> rawList;
       if (decoded is Map<String, dynamic> && decoded['wrecklog_backup'] == true) {
-        rawList = decoded['vehicles'] as List<dynamic>? ?? [];
-      } else if (decoded is List) {
+        final v = decoded['vehicles'];
+        if (v is! List) throw const FormatException('Unrecognised backup format');
+        rawList = v;
+      } else if (decoded is List && decoded.every((e) => e is Map<String, dynamic>)) {
         rawList = decoded;
       } else {
         throw const FormatException('Unrecognised backup format');
