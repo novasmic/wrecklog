@@ -160,4 +160,13 @@ void main() {
   File('assets/icon/icon_ios.png').writeAsBytesSync(img.encodePng(bg));
   // ignore: avoid_print
   print('Done — assets/icon/icon_ios.png (dark background for iOS)');
+
+  // Home screen version: composite onto the app home screen background colour
+  // (#0F1318) so there are no transparency issues on any platform.
+  final homeBg = img.Image(width: size, height: size);
+  img.fill(homeBg, color: img.ColorRgb8(0x0F, 0x13, 0x18));
+  img.compositeImage(homeBg, scaled);
+  File('assets/icon/icon_home.png').writeAsBytesSync(img.encodePng(homeBg));
+  // ignore: avoid_print
+  print('Done — assets/icon/icon_home.png (home screen background colour)');
 }

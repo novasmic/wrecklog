@@ -213,7 +213,7 @@ class HomeScreen extends StatelessWidget {
                         painter: _GlowPainter(),
                       ),
                       Image.asset(
-                        'assets/icon/icon_fg.png',
+                        'assets/icon/icon_home.png',
                         width: 200,
                         height: 200,
                         fit: BoxFit.contain,
