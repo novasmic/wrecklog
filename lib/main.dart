@@ -1178,7 +1178,8 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await purchase();
-      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+      Navigator.pop(context);
       messenger.showSnackBar(
         const SnackBar(content: Text('Welcome to Pro! 🎉')),
       );
@@ -1911,14 +1912,16 @@ class PresetGroupStorage {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_key(type));
     if (raw == null || raw.trim().isEmpty) {
-      return _deepCopy(defaultGroupedPresets[type] ?? defaultGroupedPresets[ItemType.other]!);
+      return _deepCopy(defaultGroupedPresets[type] ??
+          defaultGroupedPresets[ItemType.other] ?? {});
     }
     try {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       return decoded.map((k, v) => MapEntry(k, List<String>.from(v as List)));
     } catch (e) {
       if (kDebugMode) debugPrint('PresetGroupStorage.load failed: $e');
-      return _deepCopy(defaultGroupedPresets[type] ?? defaultGroupedPresets[ItemType.other]!);
+      return _deepCopy(defaultGroupedPresets[type] ??
+          defaultGroupedPresets[ItemType.other] ?? {});
     }
   }
 
@@ -8352,6 +8355,7 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
       groupMap.putIfAbsent(key, () => []).add(h);
     }
     final newGroups = groupMap.entries
+        .where((e) => e.value.isNotEmpty)
         .map((e) {
           final display = e.value.first.part.partNumber ?? '';
           return _PartGroup(partNumber: display, hits: e.value);
@@ -8474,7 +8478,7 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
                   child: InkWell(
                     borderRadius: BorderRadius.circular(kRadius),
                     onTap: () {
-                      if (isSingle) {
+                      if (isSingle && g.hits.isNotEmpty) {
                         // Only one hit — go straight to detail
                         final hit = g.hits.first;
                         Navigator.of(context).push(MaterialPageRoute(
