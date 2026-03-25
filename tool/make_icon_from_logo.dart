@@ -24,7 +24,7 @@ void main() {
 
   // Use flood-fill from all four edges to find background pixels.
   // Background is black/near-black — threshold is max channel value to qualify.
-  const threshold = 25;
+  const threshold = 60;
   final transparent = img.Image(width: size, height: size, numChannels: 4);
 
   // Copy all pixels across first.
