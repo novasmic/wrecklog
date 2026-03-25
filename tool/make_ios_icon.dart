@@ -13,6 +13,7 @@ void main() {
   final fgBytes = File('assets/icon/icon_fg.png').readAsBytesSync();
   final fg = img.decodePng(fgBytes);
   if (fg == null) {
+    // ignore: avoid_print
     print('ERROR: could not decode icon_fg.png');
     exit(1);
   }
