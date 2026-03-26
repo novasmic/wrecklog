@@ -3740,6 +3740,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     });
   }
 
+  void _exitSelectMode() {
+    setState(() { _selectMode = false; _selectedPartIds.clear(); });
+  }
+
   @override
   void dispose() {
     _searchDebounce?.cancel();
@@ -4319,14 +4323,18 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
 
     // Apply search query
     if (_searchQuery.isNotEmpty) {
+      // _searchQuery is already lowercase (set in _onSearchChanged).
+      // Strip dashes/spaces from the query for part-number normalization —
+      // avoids calling normalizePartNumber (which uppercases) then lowercasing again.
+      final qNorm = _searchQuery.replaceAll(RegExp(r'[-\s]'), '');
       parts = parts.where((p) {
-        final q = _searchQuery;
-        if (p.name.toLowerCase().contains(q)) return true;
-        if ((p.location ?? '').toLowerCase().contains(q)) return true;
-        if ((p.partNumber ?? '').toLowerCase().contains(q)) return true;
-        if (normalizePartNumber(p.partNumber ?? '').toLowerCase().contains(normalizePartNumber(q).toLowerCase())) return true;
-        if ((p.notes ?? '').toLowerCase().contains(q)) return true;
-        if ((p.stockId ?? '').toLowerCase().contains(q)) return true;
+        if (p.name.toLowerCase().contains(_searchQuery)) return true;
+        if ((p.location ?? '').toLowerCase().contains(_searchQuery)) return true;
+        if ((p.partNumber ?? '').toLowerCase().contains(_searchQuery)) return true;
+        // Normalized match: "abc123" finds "ABC-123" and "ABC 123".
+        if ((p.partNumber ?? '').replaceAll(RegExp(r'[-\s]'), '').toLowerCase().contains(qNorm)) return true;
+        if ((p.notes ?? '').toLowerCase().contains(_searchQuery)) return true;
+        if ((p.stockId ?? '').toLowerCase().contains(_searchQuery)) return true;
         return false;
       }).toList();
     }
@@ -4429,7 +4437,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
           ? AppBar(
               leading: IconButton(
                 icon: const Icon(Icons.close),
-                onPressed: () => setState(() { _selectMode = false; _selectedPartIds.clear(); }),
+                onPressed: _exitSelectMode,
               ),
               title: Text('${_selectedPartIds.length} selected'),
             )
@@ -4616,7 +4624,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
                   child: Row(
                     children: [
                       TextButton(
-                        onPressed: () => setState(() { _selectMode = false; _selectedPartIds.clear(); }),
+                        onPressed: _exitSelectMode,
                         child: const Text('Cancel'),
                       ),
                       const Spacer(),
