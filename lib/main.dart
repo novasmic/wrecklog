@@ -1174,25 +1174,63 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
   String? _loadingPlan;
   // Which plan is highlighted — yearly by default.
   String _selectedPlan = 'yearly';
+  // true while restore() is in-flight (blocks button + shows spinner).
+  bool _restoring = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Close the paywall and celebrate as soon as Pro is actually granted —
+    // whether via purchase stream callback, restore, or background init verify.
+    billing.addListener(_onBillingChanged);
+  }
+
+  @override
+  void dispose() {
+    billing.removeListener(_onBillingChanged);
+    super.dispose();
+  }
+
+  void _onBillingChanged() {
+    if (billing.isPro && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop();
+      messenger.showSnackBar(const SnackBar(content: Text('Welcome to Pro! 🎉')));
+    }
+  }
 
   Future<void> _buy(String plan, Future<void> Function() purchase) async {
     if (!mounted) return;
     setState(() { _loadingPlan = plan; _selectedPlan = plan; });
-    final messenger = ScaffoldMessenger.of(context);
     try {
+      // buyNonConsumable / buyYearly queue the OS payment sheet and return
+      // immediately — they do NOT wait for the user to confirm payment.
+      // Pro is granted asynchronously via purchaseStream → _handlePurchases →
+      // _grantPro() → notifyListeners() → _onBillingChanged() above.
       await purchase();
-      if (!mounted) return;
-      Navigator.pop(context);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Welcome to Pro! 🎉')),
-      );
+      // If purchase() throws (unavailable / product missing) it's caught below.
+      // On success we just wait; _onBillingChanged handles the close + snackbar.
     } catch (e) {
       if (mounted) {
         setState(() => _loadingPlan = null);
-        messenger.showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Purchase failed: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _restore() async {
+    setState(() => _restoring = true);
+    await billing.restore();
+    if (!mounted) return;
+    setState(() => _restoring = false);
+    // If Pro was granted during restore, _onBillingChanged already closed the
+    // dialog and showed the snackbar. Only reach here if nothing was found.
+    if (!billing.isPro) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active subscription found.')),
+      );
     }
   }
 
@@ -1278,16 +1316,13 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
           child: const Text('Not now'),
         ),
         TextButton(
-          onPressed: () async {
-            final messenger = ScaffoldMessenger.of(context);
-            final nav = Navigator.of(context);
-            await billing.restore();
-            if (mounted) nav.pop();
-            messenger.showSnackBar(
-              const SnackBar(content: Text('Purchases restored.')),
-            );
-          },
-          child: const Text('Restore', style: TextStyle(color: Colors.white54)),
+          onPressed: (_restoring || _loadingPlan != null) ? null : _restore,
+          child: _restoring
+              ? const SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Restore', style: TextStyle(color: Colors.white54)),
         ),
       ],
     );
