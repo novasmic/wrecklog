@@ -3638,9 +3638,8 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
 }
 
 /// ----------------------------
-/// Vehicle Detail (Parts) + Filters
+/// Vehicle Detail (Parts) Screen
 /// ----------------------------
-enum _PartsViewFilter { all, listed, notListed }
 
 /// Derived listing workflow status — never stored, always computed from part data.
 enum _WorkflowStatus { needsListing, listed, sold }
@@ -3673,7 +3672,6 @@ class VehicleDetailScreen extends StatefulWidget {
 
 class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   late Vehicle _v;
-  _PartsViewFilter _filter = _PartsViewFilter.all;
   String? _sideFilter;
   bool _selectMode = false;
   final Set<String> _selectedPartIds = {};
@@ -4221,21 +4219,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   List<Part> _filteredParts() {
     var parts = _v.parts;
 
-    // Apply state filter
-    switch (_filter) {
-      case _PartsViewFilter.all:
-        break;
-      case _PartsViewFilter.listed:
-        parts = parts.where((p) => p.hasLiveListings).toList();
-        break;
-      case _PartsViewFilter.notListed:
-        parts = parts.where((p) {
-          final inStock = p.state == PartState.removed || p.state == PartState.listed;
-          return inStock && !p.hasLiveListings;
-        }).toList();
-        break;
-    }
-
     // Apply side filter
     if (_sideFilter != null) {
       parts = parts.where((p) => p.side == _sideFilter).toList();
@@ -4262,8 +4245,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   Widget build(BuildContext context) {
     final pl = _v.profitLossCents;
     final plColor = profitColor(pl);
-
-    final notListed = _v.inStockCount - _v.listedLiveCount;
     final shownParts = _filteredParts();
 
     final infoParts = <String>[];
@@ -4291,31 +4272,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                 const SizedBox(height: 2),
                 Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.45))),
               ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    Widget filterPill(String label, _PartsViewFilter f) {
-      final active = _filter == f;
-      return GestureDetector(
-        onTap: () => setState(() => _filter = f),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            color: active ? const Color(0xFFE8700A) : Colors.white.withValues(alpha: 0.07),
-            border: Border.all(
-              color: active ? const Color(0xFFE8700A) : Colors.white.withValues(alpha: 0.12),
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: active ? Colors.white : Colors.white.withValues(alpha: 0.55),
             ),
           ),
         ),
@@ -4453,37 +4409,23 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
           // ── 4 stat boxes ─────────────────────────────────────────────
           Row(
             children: [
-              statBox('${_v.partsCount}', 'Parts', Colors.white60,
-                active: _filter == _PartsViewFilter.all,
-                onTap: () => setState(() => _filter = _PartsViewFilter.all)),
+              statBox('${_v.partsCount}', 'Parts', Colors.white60),
               const SizedBox(width: 8),
               statBox('${_v.inStockCount}', 'In Stock', const Color(0xFFE8700A)),
               const SizedBox(width: 8),
-              statBox('${_v.listedLiveCount}', 'Listed', Colors.green,
-                active: _filter == _PartsViewFilter.listed,
-                onTap: () => setState(() => _filter = _PartsViewFilter.listed)),
+              statBox('${_v.listedLiveCount}', 'Listed', Colors.green),
               const SizedBox(width: 8),
               statBox(formatMoneyFromCents(pl), 'P&L', plColor),
             ],
           ),
           const SizedBox(height: 14),
 
-          // ── Filter pills + part count ────────────────────────────────
-          Row(
-            children: [
-              filterPill('All', _PartsViewFilter.all),
-              const SizedBox(width: 8),
-              filterPill('Listed', _PartsViewFilter.listed),
-              const SizedBox(width: 8),
-              filterPill('Unlisted ($notListed)', _PartsViewFilter.notListed),
-              const Spacer(),
-              Text(
-                '${shownParts.length} part${shownParts.length == 1 ? '' : 's'}',
-                style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+          // ── Workflow summary banner ───────────────────────────────────
+          if (_v.parts.isNotEmpty)
+            _buildStatusSummaryStrip(_v.parts),
+          if (_v.parts.isNotEmpty) const SizedBox(height: 12),
+
+          // ── Side filter chips ─────────────────────────────────────────
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(children: [
@@ -4496,7 +4438,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
               sideChip('Pair', 'Pair'),
             ]),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           // ── Search bar ───────────────────────────────────────────────
           TextField(
@@ -4529,11 +4471,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
           ),
           const SizedBox(height: 12),
 
-          // ── Parts status summary strip ───────────────────────────────────
-          if (_v.parts.isNotEmpty)
-            _buildStatusSummaryStrip(_v.parts),
-          if (_v.parts.isNotEmpty) const SizedBox(height: 12),
-
           if (shownParts.isEmpty)
             AppCard(
               child: Column(
@@ -4541,14 +4478,14 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                   const Icon(Icons.inventory_2, size: 40),
                   const SizedBox(height: 10),
                   Text(
-                    _filter == _PartsViewFilter.all ? 'No parts yet' : 'No parts in this filter',
+                    _v.parts.isEmpty ? 'No parts yet' : 'No parts match your search',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _filter == _PartsViewFilter.all
+                    _v.parts.isEmpty
                         ? 'Add parts as you dismantle the vehicle.'
-                        : 'Clear filter to see everything again.',
+                        : 'Try a different search or side filter.',
                   ),
                 ],
               ),
