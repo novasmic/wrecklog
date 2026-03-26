@@ -3676,7 +3676,8 @@ class VehicleDetailScreen extends StatefulWidget {
   State<VehicleDetailScreen> createState() => _VehicleDetailScreenState();
 }
 
-class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
+class _VehicleDetailScreenState extends State<VehicleDetailScreen>
+    with WidgetsBindingObserver {
   late Vehicle _v;
   String? _sideFilter;
   bool _selectMode = false;
@@ -3691,12 +3692,27 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     _searchCtrl.addListener(() {
       setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
     });
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Emergency save when the app is sent to background.
+  /// Protects against OS killing the process mid-session (phone call,
+  /// memory pressure, etc.) before the user navigates back normally.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      final updated = widget.allVehicles
+          .map((v) => v.id == _v.id ? _v : v)
+          .toList();
+      Storage.saveVehicles(updated);
+    }
   }
 
   Future<void> _editVehicle() async {
