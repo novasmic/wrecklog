@@ -3909,7 +3909,28 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     });
   }
 
-  void _setInStock(Part p) {
+  Future<void> _setInStock(Part p) async {
+    // If the part has recorded sale data, warn before wiping it.
+    if (p.salePriceCents != null || p.dateSold != null) {
+      final priceStr = p.salePriceCents != null
+          ? ' (${formatMoneyFromCents(p.salePriceCents!)})'
+          : '';
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Put back to stock?'),
+          content: Text(
+            'This will clear the recorded sale price$priceStr and mark the '
+            'part as unsold. The listing URLs will not be deleted.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Yes, put back')),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
     setState(() {
       p.state = p.hasLiveListings ? PartState.listed : PartState.removed;
       p.salePriceCents = null;
@@ -4142,7 +4163,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
               const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFE8400A)),
               const SizedBox(width: 8),
               Text(
-                '$needsCount part${needsCount == 1 ? '' : 's'} need${needsCount == 1 ? 's' : ''} listing',
+                '$needsCount part${needsCount == 1 ? '' : 's'} need${needsCount == 1 ? 's' : ''} listing — tap to add links',
                 style: const TextStyle(
                   color: Color(0xFFE8400A),
                   fontWeight: FontWeight.w700,
@@ -4169,7 +4190,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
 
   /// Builds a single status section (header + part cards).
   Widget _buildStatusSection(
-      String title, List<Part> parts, Color accentColor, BuildContext context) {
+      String title, List<Part> parts, Color accentColor, BuildContext context,
+      {String? subtitle}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: ClipRRect(
@@ -4179,6 +4201,9 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
           child: ExpansionTile(
             initiallyExpanded: true,
             tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            subtitle: subtitle != null
+                ? Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.white38))
+                : null,
             backgroundColor: Colors.white.withValues(alpha: 0.03),
             collapsedBackgroundColor: Colors.white.withValues(alpha: 0.03),
             shape: RoundedRectangleBorder(
@@ -4275,7 +4300,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
 
     return [
       if (needsListing.isNotEmpty)
-        _buildStatusSection('Needs Listing', needsListing, const Color(0xFFE8400A), context),
+        _buildStatusSection('Needs Listing', needsListing, const Color(0xFFE8400A), context,
+            subtitle: 'Add a live marketplace link to list these parts'),
       if (listed.isNotEmpty)
         _buildStatusSection('Listed', listed, Colors.green, context),
       if (sold.isNotEmpty)
