@@ -63,7 +63,6 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await billing.init();
   if (kDebugMode) await _loadDebugProFlag();
-  await PresetGroupStorage.migrate(); // one-time preset key migration // no-op in release
   runApp(const WreckLogApp());
 }
 
@@ -597,6 +596,9 @@ class Part {
   /// User-assigned category. Null for uncategorised / legacy parts.
   String? category;
 
+  /// ID of the parent vehicle. Null for parts created before this field was added.
+  String? vehicleId;
+
   // Vehicle snapshot (copied from vehicle at creation, never updated)
   String? vehicleMake;
   String? vehicleModel;
@@ -619,6 +621,7 @@ class Part {
     required this.name,
     required this.state,
     required this.createdAt,
+    this.vehicleId,
     this.location,
     this.notes,
     this.partNumber,
@@ -690,6 +693,7 @@ class Part {
         'listings': listings.map((l) => l.toJson()).toList(),
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
+        'vehicleId': vehicleId,
         'stockId': stockId,
         'photoIds': photoIds,
         'category': category,
@@ -721,6 +725,7 @@ class Part {
       askingPriceCents: (j['askingPriceCents'] as num?)?.toInt(),
       salePriceCents: (j['salePriceCents'] as num?)?.toInt(),
       createdAt: DateTime.tryParse((j['createdAt'] as String?) ?? '') ?? DateTime.now(),
+      vehicleId: j['vehicleId'] as String?,
       listings: listingsJson.map((e) => Listing.fromJson(e as Map<String, dynamic>)).toList(),
       stockId: j['stockId'] as String?,  // null for old parts — never back-filled
       updatedAt: j['updatedAt'] == null ? null : DateTime.tryParse(j['updatedAt'] as String),
@@ -946,10 +951,6 @@ class Storage {
     // User-customised settings
     await prefs.remove('part_categories');
     await prefs.remove('listing_platforms');
-    await prefs.remove(PresetGroupStorage._versionKey);
-    for (final type in ItemType.values) {
-      await PresetGroupStorage.reset(type);
-    }
 
     // Recent model autocomplete cache
     final recentKeys = prefs.getKeys()
@@ -1619,10 +1620,6 @@ const int _kBackupFormatVersion = 2;
 Future<String> vehiclesToPrettyJson(List<Vehicle> vehicles) async {
   final categories = await PartCategoryStorage.load();
   final platforms = await PlatformStorage.load();
-  final presets = <String, dynamic>{};
-  for (final type in ItemType.values) {
-    presets[type.name] = await PresetGroupStorage.load(type);
-  }
   final obj = {
     'wrecklog_backup': true,
     'format_version': _kBackupFormatVersion,
@@ -1630,7 +1627,6 @@ Future<String> vehiclesToPrettyJson(List<Vehicle> vehicles) async {
     'vehicles': vehicles.map((v) => v.toJson()).toList(),
     'part_categories': categories,
     'listing_platforms': platforms,
-    'preset_groups': presets,
   };
   const encoder = JsonEncoder.withIndent('  ');
   return encoder.convert(obj);
@@ -1721,236 +1717,6 @@ void downloadTextFileWeb({required String filename, required String content}) {
   webDownloadTextFile(filename: filename, content: content);
 }
 
-/// ----------------------------
-/// Presets
-/// ----------------------------
-// ─────────────────────────────────────────────────────────────────────────────
-// Grouped Preset Parts  (v1.2)
-// Map<groupName, List<partName>> per ItemType
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Default grouped presets — used when no prefs key exists or on reset.
-Map<ItemType, Map<String, List<String>>> defaultGroupedPresets = {
-  ItemType.car: {
-    'Engine': [
-      'Engine complete', 'Long motor', 'Short motor', 'Turbo',
-      'Injectors', 'Fuel pump (high pressure)', 'Intake manifold',
-      'Throttle body', 'EGR valve', 'Oil pump', 'Rocker cover',
-      'Cylinder head', 'Timing components',
-    ],
-    'Transmission': [
-      'Gearbox', 'Torque converter', 'Clutch kit', 'Flywheel',
-      'Gear selector', 'Transmission cooler', 'Mechatronics / valve body',
-    ],
-    'Driveline': [
-      'Differential (front)', 'Differential (rear)', 'Transfer case',
-      'Tailshaft', 'CV shafts', 'Drive shafts', 'Axles',
-      'Wheel hubs', 'Prop shaft',
-    ],
-    'Suspension': [
-      'Control arms', 'Shocks / struts', 'Springs', 'Sway bar',
-      'Links / bushes', 'Leaf springs', 'Upper arms', 'Lower arms',
-    ],
-    'Steering': [
-      'Steering rack', 'Power steering pump', 'Steering column',
-      'Tie rods', 'Steering knuckle',
-    ],
-    'Brakes': [
-      'Brake calipers', 'Brake discs / rotors', 'Brake pads',
-      'ABS module', 'Brake booster', 'Master cylinder', 'Handbrake components',
-    ],
-    'Electrical': [
-      'Alternator', 'Starter motor', 'Wiring loom', 'ECU / PCM', 'BCM',
-      'Sensors', 'Relays', 'Fuse box', 'Instrument cluster',
-      'Window motors', 'Switches',
-    ],
-    'Lighting': [
-      'Headlights', 'Tail lights', 'Indicators', 'Fog lights',
-      'LED light bars', 'Interior lights', 'Brake lights',
-    ],
-    'Cooling': [
-      'Radiator', 'Intercooler', 'Cooling fan', 'Thermostat housing',
-      'Overflow bottle', 'Heater core', 'Condenser',
-    ],
-    'Fuel System': [
-      'Fuel tank', 'Lift pump', 'Fuel lines', 'Fuel rail', 'Injectors',
-    ],
-    'Exhaust': [
-      'Exhaust system', 'Muffler', 'DPF', 'Catalytic converter', 'Exhaust manifold',
-    ],
-    'Body': [
-      'Doors', 'Bonnet', 'Guards / fenders', 'Tailgate', 'Bumper',
-      'Grille', 'Mirrors', 'Window glass',
-    ],
-    'Interior': [
-      'Seats', 'Dash', 'Centre console', 'Door trims', 'Carpet',
-      'Seatbelts', 'Steering wheel', 'Infotainment screen', 'Interior switches',
-    ],
-    'Wheels & Tyres': [
-      'Wheels / rims', 'Tyres', 'Spare wheel', 'Wheel nuts',
-    ],
-    'Accessories': [
-      'Bullbar', 'Tow bar', 'Snorkel', 'Side steps', 'Roof rack',
-      'Canopy', 'Tray', 'Spotlights', 'UHF radios', 'Brake controller',
-      'Aftermarket add-ons',
-    ],
-    'Other': ['Misc parts'],
-  },
-  ItemType.motorcycle: {
-    'Engine': ['Engine', 'Gearbox', 'Exhaust', 'Starter motor', 'Alternator'],
-    'Frame': ['Frame', 'Swingarm', 'Front forks', 'Rear shock', 'Triple clamp'],
-    'Electrical': ['ECU', 'Instrument cluster', 'Headlight', 'Tail light', 'Wiring loom'],
-    'Controls': ['Handlebar', 'Throttle body', 'Brake caliper (F)', 'Brake caliper (R)', 'Footpegs'],
-    'Bodywork': ['Fairings (set)', 'Fuel tank', 'Seat', 'Front guard', 'Rear guard'],
-    'Other': ['Front wheel', 'Rear wheel', 'Chain & sprockets', 'Battery'],
-  },
-  ItemType.boat: {
-    'Outboard': ['Outboard', 'Propeller', 'Lower unit', 'Powerhead', 'Tilt & trim'],
-    'Electrical': ['Battery', 'Wiring loom', 'Gauges', 'Bilge pump', 'Navigation lights'],
-    'Fuel': ['Fuel tank', 'Fuel lines', 'Fuel pump'],
-    'Steering': ['Steering wheel', 'Steering cable', 'Helm pump'],
-    'Pumps': ['Bilge pump', 'Livebait pump', 'Wash-down pump'],
-    'Trailer': ['Trailer frame', 'Trailer axle', 'Trailer wheels', 'Winch'],
-    'Other': ['Anchor', 'Hatch lids', 'Rod holders', 'Seats'],
-  },
-  ItemType.tractor: {
-    'Engine': ['Engine', 'Radiator', 'Starter motor', 'Alternator', 'Turbo', 'Injectors'],
-    'Hydraulics': ['Hydraulic pump', 'Hydraulic cylinder', 'Control valve', 'PTO assembly'],
-    'Electrical': ['ECU', 'Instrument cluster', 'Wiring loom', 'Battery'],
-    'Cooling': ['Radiator', 'Overflow bottle', 'Thermo fan', 'Water pump'],
-    'Running Gear': ['Transmission', 'Tyres (set)', 'Rim (set)', 'Axle shaft'],
-    'Controls': ['Steering wheel', 'Joystick controller', 'Cab parts', 'Seat'],
-    'Other': ['Three-point linkage', 'Draw bar', 'Front weights'],
-  },
-  ItemType.other: {
-    'General': ['Main assembly', 'Control module', 'Panels', 'Fasteners / misc'],
-    'Electrical': ['Wiring', 'Lights', 'Battery', 'Control board'],
-    'Hardware': ['Bolts / nuts', 'Bearings', 'Seals', 'Gaskets'],
-    'Other': ['Misc parts'],
-  },
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// Canonical prefs key for grouped presets — ONE function, used everywhere.
-// Strips slashes, spaces and surrounding whitespace so
-// "Tractor / Machinery" → "preset_groups_TractorMachinery"
-// ─────────────────────────────────────────────────────────────────────────────
-String prefsKeyForType(String type) {
-  final normalized = type
-      .toLowerCase()
-      .replaceAll('/', '')
-      .replaceAll(' ', '')
-      .trim();
-  return 'preset_groups_$normalized';
-}
-
-// PresetGroupStorage — load/save grouped presets per ItemType
-// ─────────────────────────────────────────────────────────────────────────────
-class PresetGroupStorage {
-  static String _key(ItemType t) => prefsKeyForType(t.label);
-
-  // Bump this when defaultGroupedPresets changes in a breaking way.
-  // On first load after an upgrade, old per-type prefs are wiped and replaced
-  // with fresh defaults — protecting against stale data from old builds.
-  static const String _versionKey = 'preset_groups_schema_v';
-  static const int _currentVersion = 3;
-
-  /// One-time migration for the old broken-key-generation bug.
-  ///
-  /// The old bug caused string interpolation to be written literally, producing
-  /// the key `preset_groups_\$normalized` (dollar sign included) instead of
-  /// the correct per-type keys. All five types collided under that one key.
-  ///
-  /// Fix: remove only the known broken collision key. Valid per-type keys
-  /// (preset_groups_car, preset_groups_motorcycle, etc.) are left untouched
-  /// unless we can positively detect that a per-type key holds cross-type
-  /// content (i.e. it was written when all types collided).
-  static Future<void> migrate() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getInt(_versionKey) ?? 0;
-    if (stored >= _currentVersion) return;
-
-    // 1. Remove the literal broken collision key if it exists.
-    const brokenKey = r'preset_groups_$normalized';
-    await prefs.remove(brokenKey);
-
-    // 2. For each valid per-type key, check if it looks like cross-type
-    //    contamination: if a motorcycle/boat/tractor key contains car-only
-    //    part names (e.g. "Tailgate") it was written under the old collision
-    //    bug. Wipe it so it falls back to the correct type defaults.
-    // Terms that are unambiguously car-specific and would never appear in a
-    // legitimate motorcycle/boat/tractor preset list. Borderline terms like
-    // "dashboard" and "centre console" are excluded to avoid false positives.
-    const carOnlyTerms = {'tailgate', 'bonnet', 'front bar', 'rear bar', 'carpet set'};
-    const contaminationThreshold = 2; // require 2+ matches before wiping
-    final typesToCheck = {
-      ItemType.motorcycle, ItemType.boat, ItemType.tractor, ItemType.other,
-    };
-    for (final type in typesToCheck) {
-      final key = _key(type);
-      final raw = prefs.getString(key);
-      if (raw == null) continue;
-      try {
-        final decoded = jsonDecode(raw) as Map<String, dynamic>;
-        final allParts = <String>{};
-        for (final v in decoded.values) {
-          allParts.addAll((v as List).map((e) => (e as String).toLowerCase()));
-        }
-        final matchCount = carOnlyTerms.where((t) => allParts.contains(t)).length;
-        if (matchCount >= contaminationThreshold) await prefs.remove(key);
-      } catch (e) {
-        if (kDebugMode) debugPrint('PresetGroupStorage.migrate: corrupt key $key — wiping: $e');
-        await prefs.remove(key); // corrupt data — safe to wipe
-      }
-    }
-
-    await prefs.setInt(_versionKey, _currentVersion);
-  }
-
-  static Future<Map<String, List<String>>> load(ItemType type) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key(type));
-    if (raw == null || raw.trim().isEmpty) {
-      return _deepCopy(defaultGroupedPresets[type] ??
-          defaultGroupedPresets[ItemType.other] ?? {});
-    }
-    try {
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      return decoded.map((k, v) => MapEntry(k, List<String>.from(v as List)));
-    } catch (e) {
-      if (kDebugMode) debugPrint('PresetGroupStorage.load failed: $e');
-      return _deepCopy(defaultGroupedPresets[type] ??
-          defaultGroupedPresets[ItemType.other] ?? {});
-    }
-  }
-
-  static Future<void> save(ItemType type, Map<String, List<String>> groups) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key(type), jsonEncode(groups));
-  }
-
-  static Future<void> reset(ItemType type) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key(type));
-  }
-
-  static Map<String, List<String>> _deepCopy(Map<String, List<String>> src) =>
-      {for (final e in src.entries) e.key: List<String>.from(e.value)};
-}
-
-/// Normalize a part name for duplicate detection: trim + collapse spaces + lowercase.
-String _normalizePartName(String s) =>
-    s.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
-
-/// Legacy flat list — kept so nothing else in the file breaks.
-/// Now derived from default grouped presets (flattened).
-Map<ItemType, List<String>> get presetPartsByType => {
-  for (final entry in defaultGroupedPresets.entries)
-    entry.key: [
-      for (final parts in entry.value.values) ...parts,
-    ],
-};
 
 /// ----------------------------
 /// UI Building Blocks
@@ -3954,77 +3720,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     });
   }
 
-  Future<void> _quickAddPresets() async {
-    final groups = await PresetGroupStorage.load(_v.itemType);
-    if (!mounted) return;
-    final selected = await Navigator.of(context).push<Set<String>>(
-      MaterialPageRoute(
-        builder: (_) => GroupedPresetsPickerScreen(
-          itemType: _v.itemType,
-          groups: groups,
-          allVehicles: _allVehiclesWithCurrent(),
-          existingParts: _v.parts,
-        ),
-        fullscreenDialog: true,
-      ),
-    );
-    if (selected == null || selected.isEmpty) return;
-    if (!mounted) return;
-
-    if (!isPro) {
-      final remaining = kFreePartLimitPerVehicle - _v.parts.length;
-      if (remaining <= 0) {
-        await showProPaywall(
-          context,
-          title: 'Free parts limit reached',
-          message: 'Free WreckLog allows $kFreePartLimitPerVehicle parts per vehicle. Upgrade to Pro for unlimited parts.',
-        );
-        return;
-      }
-      if (selected.length > remaining) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Free tier allows $remaining more part(s) on this vehicle. Please select fewer or upgrade to Pro.')),
-        );
-        return;
-      }
-    }
-
-    setState(() {
-      // Build a running set of existing stock IDs so each preset gets a unique one
-      final existingIds = <String>{};
-      for (final v in _allVehiclesWithCurrent()) {
-        for (final p in v.parts) {
-          if (p.stockId != null) existingIds.add(p.stockId!);
-        }
-      }
-
-      for (final name in selected) {
-        final stockId = _generateStockId(existingIds);
-        existingIds.add(stockId); // reserve for the next iteration
-        _v.parts.insert(
-          0,
-          Part(
-            id: newId(),
-            name: name,
-            state: PartState.removed,
-            createdAt: DateTime.now(),
-            qty: 1,
-            stockId: stockId,
-            vehicleMake: _v.make,
-            vehicleModel: _v.model,
-            vehicleYear: _v.year,
-            vehicleTrim: _v.trim,
-            vehicleEngine: _v.engine,
-            vehicleTransmission: _v.transmission,
-            vehicleDrivetrain: _v.drivetrain,
-            vehicleUsageValue: _v.usageValue,
-            vehicleUsageUnit: _v.usageUnit,
-          ),
-        );
-      }
-    });
-  }
-
   void _saveAndExit() => Navigator.of(context).pop(_v);
 
   /// Returns allVehicles from parent with current vehicle replaced by latest _v.
@@ -4127,6 +3822,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       p.state = PartState.sold;
       p.salePriceCents = cents;
       p.dateSold ??= DateTime.now();
+      p.updatedAt = DateTime.now();
       for (final l in p.listings) {
         l.isLive = false;
       }
@@ -4137,6 +3833,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     setState(() {
       p.state = PartState.scrapped;
       p.salePriceCents = null;
+      p.updatedAt = DateTime.now();
       for (final l in p.listings) {
         l.isLive = false;
       }
@@ -4147,6 +3844,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     setState(() {
       p.state = p.hasLiveListings ? PartState.listed : PartState.removed;
       p.salePriceCents = null;
+      p.updatedAt = DateTime.now();
     });
   }
 
@@ -4163,6 +3861,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       notes: source.notes,
       location: source.location,
       qty: source.qty,
+      vehicleId: _v.id,
       stockId: generateUniqueStockId(_allVehiclesWithCurrent()),
       vehicleMake: source.vehicleMake,
       vehicleModel: source.vehicleModel,
@@ -4283,6 +3982,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
           p.state = PartState.sold;
           p.salePriceCents = cents;
           p.dateSold ??= DateTime.now();
+          p.updatedAt = DateTime.now();
           for (final l in p.listings) { l.isLive = false; }
         }
       }
@@ -4293,10 +3993,12 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
 
   void _bulkMarkScrapped() {
     setState(() {
+      final now = DateTime.now();
       for (final p in _v.parts) {
         if (_selectedPartIds.contains(p.id)) {
           p.state = PartState.scrapped;
           p.salePriceCents = null;
+          p.updatedAt = now;
           for (final l in p.listings) { l.isLive = false; }
         }
       }
@@ -4333,47 +4035,66 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     });
   }
 
-  /// Summary strip showing Needs Listing / Listed / Sold counts for all parts.
+  /// Summary banner: prominent "X parts need listing" + secondary stats.
   Widget _buildStatusSummaryStrip(List<Part> allParts) {
     final needsCount  = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.needsListing).length;
     final listedCount = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.listed).length;
     final soldCount   = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.sold).length;
 
-    Widget chip(String label, int count, Color color, bool filled) {
+    Widget statChip(String label, int count, Color color) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: filled ? color.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: filled ? 0.35 : 0.15)),
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 6, height: 6,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+          Container(width: 5, height: 5, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 5),
-          Text('$count',
-              style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.7), fontWeight: FontWeight.w700)),
+          Text('$count $label', style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
         ]),
       );
     }
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (needsCount > 0) ...[
-          chip('Needs Listing', needsCount, const Color(0xFFE8400A), true),
-          const SizedBox(width: 8),
-        ],
-        if (listedCount > 0) ...[
-          chip('Listed', listedCount, Colors.green, false),
-          const SizedBox(width: 8),
-        ],
-        if (soldCount > 0)
-          chip('Sold', soldCount, Colors.white38, false),
+        // Primary attention banner — only shown when parts need listing
+        if (needsCount > 0)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8400A).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE8400A).withValues(alpha: 0.4)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFE8400A)),
+              const SizedBox(width: 8),
+              Text(
+                '$needsCount part${needsCount == 1 ? '' : 's'} need${needsCount == 1 ? 's' : ''} listing',
+                style: const TextStyle(
+                  color: Color(0xFFE8400A),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ]),
+          ),
+        if (needsCount > 0) const SizedBox(height: 8),
+
+        // Secondary stats row
+        if (listedCount > 0 || soldCount > 0)
+          Row(children: [
+            if (listedCount > 0) ...[
+              statChip('Listed', listedCount, Colors.green),
+              const SizedBox(width: 8),
+            ],
+            if (soldCount > 0)
+              statChip('Sold', soldCount, Colors.white54),
+          ]),
       ],
     );
   }
@@ -4453,11 +4174,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                         onMarkInStock: () => _setInStock(p),
                         onOpenLinks: () => showLinksSheet(context, p),
                         onDuplicate: () => _duplicatePart(p),
-                        onAddToCommonParts: () => showAddToCommonPartsSheet(
-                          context,
-                          partName: p.name,
-                          itemType: _v.itemType,
-                        ),
                       ),
                       if (_selectMode)
                         Positioned(
@@ -4659,7 +4375,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
             icon: const Icon(Icons.more_vert),
             tooltip: 'More options',
             onSelected: (value) async {
-              if (value == 'quick_add') await _quickAddPresets();
               if (value == 'delete_sold_photos') await _deleteSoldPartPhotos();
               if (value == 'toggle_completed') {
                 setState(() {
@@ -4670,12 +4385,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'quick_add', child: ListTile(
-                leading: Icon(Icons.playlist_add),
-                title: Text('Add common parts'),
-                contentPadding: EdgeInsets.zero,
-              )),
-              const PopupMenuDivider(),
               PopupMenuItem(value: 'toggle_completed', child: ListTile(
                 leading: Icon(_v.status == VehicleStatus.shellGone ? Icons.refresh : Icons.check_circle_outline),
                 title: Text(_v.status == VehicleStatus.shellGone ? 'Mark Active' : 'Mark Completed'),
@@ -4695,13 +4404,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FloatingActionButton.small(
-            heroTag: 'fab_common_parts',
-            onPressed: _quickAddPresets,
-            tooltip: 'Add common parts',
-            child: const Icon(Icons.playlist_add),
-          ),
-          const SizedBox(height: 12),
           FloatingActionButton.extended(
             heroTag: 'fab_add_part',
             onPressed: _addPart,
@@ -4843,7 +4545,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                   const SizedBox(height: 6),
                   Text(
                     _filter == _PartsViewFilter.all
-                        ? 'Add parts as you dismantle. Use "Add common parts" to speed it up.'
+                        ? 'Add parts as you dismantle the vehicle.'
                         : 'Clear filter to see everything again.',
                   ),
                 ],
@@ -5561,7 +5263,6 @@ class PartCard extends StatelessWidget {
   final VoidCallback onMarkScrapped;
   final VoidCallback onMarkInStock;
   final VoidCallback onOpenLinks;
-  final VoidCallback? onAddToCommonParts;
   final VoidCallback? onDuplicate;
 
   const PartCard({
@@ -5573,7 +5274,6 @@ class PartCard extends StatelessWidget {
     required this.onMarkScrapped,
     required this.onMarkInStock,
     required this.onOpenLinks,
-    this.onAddToCommonParts,
     this.onDuplicate,
   });
 
@@ -5712,7 +5412,7 @@ class PartCard extends StatelessWidget {
                   if (v == 'scrap')     onMarkScrapped();
                   if (v == 'instock')   onMarkInStock();
                   if (v == 'links')     onOpenLinks();
-                  if (v == 'common' && onAddToCommonParts != null) onAddToCommonParts!();
+
                 },
                 padding: EdgeInsets.zero,
                 iconSize: 20,
@@ -5751,12 +5451,6 @@ class PartCard extends StatelessWidget {
                     PopupMenuItem(value: 'links', child: ListTile(
                       leading: const Icon(Icons.open_in_new),
                       title: Text('Open links (${part.totalLinksCount})'),
-                      contentPadding: EdgeInsets.zero,
-                    )),
-                  if (onAddToCommonParts != null)
-                    const PopupMenuItem(value: 'common', child: ListTile(
-                      leading: Icon(Icons.star_border_outlined),
-                      title: Text('Add to Common Parts'),
                       contentPadding: EdgeInsets.zero,
                     )),
                   const PopupMenuDivider(),
@@ -6154,6 +5848,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
       partNumber: pn.isEmpty ? null : pn,
       qty: qty < 1 ? 1 : qty,
       listings: listings,
+      vehicleId: widget.vehicle.id,
       stockId: _stockId,
       category: _category,
       vehicleMake: _vMake,
@@ -7209,1089 +6904,9 @@ class _EditListingDialogState extends State<EditListingDialog> {
   }
 }
 
-/// ----------------------------
-/// Quick Add Presets Dialog
-/// ----------------------------
-
 // ═════════════════════════════════════════════════════════════════════════════
-// GroupedPresetsPickerScreen  (v1.2)
-// Full-screen grouped preset picker with collapsible sections + Edit button
+// REMOVED: GroupedPresetsPickerScreen, AddToCommonPartsSheet, QuickAddPresetsDialog
 // ═════════════════════════════════════════════════════════════════════════════
-class GroupedPresetsPickerScreen extends StatefulWidget {
-  final ItemType itemType;
-  final Map<String, List<String>> groups;
-  final List<Vehicle> allVehicles;
-  /// Parts already on this vehicle — used to show ×N count badges on chips.
-  final List<Part> existingParts;
-
-  const GroupedPresetsPickerScreen({
-    super.key,
-    required this.itemType,
-    required this.groups,
-    required this.allVehicles,
-    this.existingParts = const [],
-  });
-
-  @override
-  State<GroupedPresetsPickerScreen> createState() => _GroupedPresetsPickerScreenState();
-}
-
-class _GroupedPresetsPickerScreenState extends State<GroupedPresetsPickerScreen> {
-  final Set<String> _selected = {};
-  late Map<String, List<String>> _groups;
-  // Track which groups are expanded (default: all expanded)
-  late Map<String, bool> _expanded;
-  // How many times each part name already exists on this vehicle (case-insensitive)
-  late Map<String, int> _existingCounts;
-
-  @override
-  void initState() {
-    super.initState();
-    _groups = Map.from(widget.groups.map((k, v) => MapEntry(k, List<String>.from(v))));
-    _expanded = {for (final k in _groups.keys) k: true};
-    // Build count map once — normalised lowercase key → count
-    _existingCounts = {};
-    for (final p in widget.existingParts) {
-      final key = p.name.trim().toLowerCase();
-      _existingCounts[key] = (_existingCounts[key] ?? 0) + 1;
-    }
-  }
-
-  Future<void> _openEditor() async {
-    final updated = await Navigator.of(context).push<Map<String, List<String>>>(
-      MaterialPageRoute(
-        builder: (_) => PresetEditorScreen(
-          itemType: widget.itemType,
-          groups: _groups,
-        ),
-      ),
-    );
-    if (updated != null) {
-      setState(() {
-        _groups = updated;
-        // Re-expand new groups, keep existing expansion state
-        for (final k in _groups.keys) {
-          _expanded.putIfAbsent(k, () => true);
-        }
-        // Remove selected items that no longer exist
-        final allParts = {
-          for (final parts in _groups.values) ...parts,
-        };
-        _selected.removeWhere((s) => !allParts.contains(s));
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final totalCount = _groups.values.fold<int>(0, (sum, parts) => sum + parts.length);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Common parts — ${widget.itemType.label}'),
-        actions: [
-          TextButton.icon(
-            onPressed: _openEditor,
-            icon: const Icon(Icons.edit_outlined, size: 18),
-            label: const Text('Edit list'),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Hint row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 0),
-            child: Row(
-              children: [
-                const Icon(Icons.touch_app_outlined, size: 16, color: Colors.white38),
-                const SizedBox(width: 6),
-                Text(
-                  'Tap parts to select • ${_selected.length}/$totalCount selected',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-                const Spacer(),
-                if (_selected.isNotEmpty)
-                  TextButton(
-                    onPressed: () => setState(() => _selected.clear()),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: Size.zero,
-                    ),
-                    child: Text(
-                      'Clear (${_selected.length})',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          // Grouped list
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(kPad, 8, kPad, 96),
-              children: [
-                for (final entry in _groups.entries)
-                  _buildGroupTile(entry.key, entry.value),
-              ],
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(kPad, 8, kPad, kPad),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, null),
-                  child: const Text('Cancel'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: FilledButton(
-                  onPressed: _selected.isEmpty
-                      ? null
-                      : () => Navigator.pop(context, Set<String>.from(_selected)),
-                  child: Text(
-                    _selected.isEmpty ? 'Add parts' : 'Add ${_selected.length} part${_selected.length == 1 ? '' : 's'}',
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGroupTile(String groupName, List<String> parts) {
-    final groupSelectedCount = parts.where((p) => _selected.contains(p)).length;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Theme(
-        // Remove default ExpansionTile divider
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          key: PageStorageKey(groupName),
-          initiallyExpanded: _expanded[groupName] ?? true,
-          onExpansionChanged: (v) => setState(() => _expanded[groupName] = v),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-          title: Row(
-            children: [
-              Text(
-                groupName,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-              ),
-              const SizedBox(width: 8),
-              if (groupSelectedCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8700A).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFE8700A).withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    '$groupSelectedCount',
-                    style: const TextStyle(
-                      color: Color(0xFFE8700A),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          trailing: Text(
-            '${parts.length} item${parts.length == 1 ? '' : 's'}',
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
-          ),
-          children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: parts.map((item) {
-                final isSelected = _selected.contains(item);
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    if (isSelected) {
-                      _selected.remove(item);
-                    } else {
-                      _selected.add(item);
-                    }
-                  }),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 100),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFFE8700A).withValues(alpha: 0.15)
-                          : Colors.white.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isSelected
-                            ? const Color(0xFFE8700A).withValues(alpha: 0.7)
-                            : Colors.white.withValues(alpha: 0.12),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isSelected) ...[
-                          const Icon(Icons.check, size: 13, color: Color(0xFFE8700A)),
-                          const SizedBox(width: 5),
-                        ],
-                        Text(
-                          item,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: isSelected ? Colors.white : Colors.white70,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
-                          ),
-                        ),
-                        // ×N badge — shows how many already added to this vehicle
-                        Builder(builder: (_) {
-                          final count = _existingCounts[item.trim().toLowerCase()] ?? 0;
-                          if (count == 0) return const SizedBox.shrink();
-                          return Container(
-                            margin: const EdgeInsets.only(left: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              '×$count',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Colors.white54,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
-// ═════════════════════════════════════════════════════════════════════════════
-// PresetEditorScreen  (v1.2)
-// Add/rename/delete groups and items, reorder with up/down, reset to defaults
-// ═════════════════════════════════════════════════════════════════════════════
-class PresetEditorScreen extends StatefulWidget {
-  final ItemType itemType;
-  final Map<String, List<String>> groups;
-
-  const PresetEditorScreen({
-    super.key,
-    required this.itemType,
-    required this.groups,
-  });
-
-  @override
-  State<PresetEditorScreen> createState() => _PresetEditorScreenState();
-}
-
-class _PresetEditorScreenState extends State<PresetEditorScreen> {
-  late List<MapEntry<String, List<String>>> _groupList;
-  bool _dirty = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _groupList = widget.groups.entries
-        .map((e) => MapEntry(e.key, List<String>.from(e.value)))
-        .toList();
-  }
-
-  Map<String, List<String>> _toMap() =>
-      {for (final e in _groupList) e.key: e.value};
-
-  Future<void> _save() async {
-    final map = _toMap();
-    await PresetGroupStorage.save(widget.itemType, map);
-    if (mounted) Navigator.of(context).pop(map);
-  }
-
-  Future<void> _confirmReset() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reset to defaults?'),
-        content: Text(
-          'This will replace your custom list for ${widget.itemType.label} with the built-in defaults. This cannot be undone.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Reset'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    await PresetGroupStorage.reset(widget.itemType);
-    final defaults = await PresetGroupStorage.load(widget.itemType);
-    if (mounted) {
-      Navigator.of(context).pop(defaults);
-    }
-  }
-
-  void _addGroup() {
-    final ctrl = TextEditingController();
-    final messenger = ScaffoldMessenger.of(context);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New group'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(hintText: 'Group name'),
-          onSubmitted: (_) => Navigator.pop(ctx),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              final name = ctrl.text.trim();
-              if (name.isEmpty) return;
-              // Check duplicate group name (case-insensitive)
-              final existing = _groupList.map((e) => e.key.toLowerCase()).toSet();
-              if (existing.contains(name.toLowerCase())) {
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Group already exists')),
-                );
-                Navigator.pop(ctx);
-                return;
-              }
-              setState(() {
-                _groupList.add(MapEntry(name, []));
-                _dirty = true;
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    ).then((_) => ctrl.dispose());
-  }
-
-  void _renameGroup(int index) {
-    final ctrl = TextEditingController(text: _groupList[index].key);
-    final messenger = ScaffoldMessenger.of(context);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename group'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(hintText: 'Group name'),
-          onSubmitted: (_) => Navigator.pop(ctx),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              final name = ctrl.text.trim();
-              if (name.isEmpty) { Navigator.pop(ctx); return; }
-              final existing = _groupList
-                  .asMap()
-                  .entries
-                  .where((e) => e.key != index)
-                  .map((e) => e.value.key.toLowerCase())
-                  .toSet();
-              if (existing.contains(name.toLowerCase())) {
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Group already exists')),
-                );
-                Navigator.pop(ctx);
-                return;
-              }
-              setState(() {
-                _groupList[index] = MapEntry(name, _groupList[index].value);
-                _dirty = true;
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
-    ).then((_) => ctrl.dispose());
-  }
-
-  Future<void> _deleteGroup(int index) async {
-    final name = _groupList[index].key;
-    final count = _groupList[index].value.length;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete "$name"?'),
-        content: Text(count > 0
-            ? 'This will also delete $count item${count == 1 ? '' : 's'} inside it.'
-            : 'This group is empty.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    setState(() {
-      _groupList.removeAt(index);
-      _dirty = true;
-    });
-  }
-
-  void _moveGroupUp(int index) {
-    if (index == 0) return;
-    setState(() {
-      final tmp = _groupList[index - 1];
-      _groupList[index - 1] = _groupList[index];
-      _groupList[index] = tmp;
-      _dirty = true;
-    });
-  }
-
-  void _moveGroupDown(int index) {
-    if (index >= _groupList.length - 1) return;
-    setState(() {
-      final tmp = _groupList[index + 1];
-      _groupList[index + 1] = _groupList[index];
-      _groupList[index] = tmp;
-      _dirty = true;
-    });
-  }
-
-  void _addItem(int groupIndex) {
-    final ctrl = TextEditingController();
-    final messenger = ScaffoldMessenger.of(context);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Add to "${_groupList[groupIndex].key}"'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(hintText: 'Part name'),
-          onSubmitted: (_) => Navigator.pop(ctx),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              final name = ctrl.text.trim();
-              if (name.isEmpty) { Navigator.pop(ctx); return; }
-              final items = _groupList[groupIndex].value;
-              final normalised = _normalizePartName(name);
-              if (items.any((i) => _normalizePartName(i) == normalised)) {
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Already exists in this group')),
-                );
-                Navigator.pop(ctx);
-                return;
-              }
-              setState(() {
-                items.add(name);
-                _dirty = true;
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    ).then((_) => ctrl.dispose());
-  }
-
-  void _renameItem(int groupIndex, int itemIndex) {
-    final ctrl = TextEditingController(text: _groupList[groupIndex].value[itemIndex]);
-    final messenger = ScaffoldMessenger.of(context);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename part'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (_) => Navigator.pop(ctx),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              final name = ctrl.text.trim();
-              if (name.isEmpty) { Navigator.pop(ctx); return; }
-              final items = _groupList[groupIndex].value;
-              final normalised = _normalizePartName(name);
-              final others = items
-                  .asMap()
-                  .entries
-                  .where((e) => e.key != itemIndex)
-                  .map((e) => _normalizePartName(e.value))
-                  .toSet();
-              if (others.contains(normalised)) {
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Already exists in this group')),
-                );
-                Navigator.pop(ctx);
-                return;
-              }
-              setState(() {
-                items[itemIndex] = name;
-                _dirty = true;
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
-    ).then((_) => ctrl.dispose());
-  }
-
-  void _deleteItem(int groupIndex, int itemIndex) {
-    setState(() {
-      _groupList[groupIndex].value.removeAt(itemIndex);
-      _dirty = true;
-    });
-  }
-
-  void _moveItemUp(int groupIndex, int itemIndex) {
-    if (itemIndex == 0) return;
-    setState(() {
-      final items = _groupList[groupIndex].value;
-      final tmp = items[itemIndex - 1];
-      items[itemIndex - 1] = items[itemIndex];
-      items[itemIndex] = tmp;
-      _dirty = true;
-    });
-  }
-
-  void _moveItemDown(int groupIndex, int itemIndex) {
-    final items = _groupList[groupIndex].value;
-    if (itemIndex >= items.length - 1) return;
-    setState(() {
-      final tmp = items[itemIndex + 1];
-      items[itemIndex + 1] = items[itemIndex];
-      items[itemIndex] = tmp;
-      _dirty = true;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_dirty,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        final choice = await showDialog<String>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Unsaved changes'),
-            content: const Text('Save your changes before leaving?'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, 'discard'), child: const Text('Discard')),
-              TextButton(onPressed: () => Navigator.pop(ctx, 'cancel'), child: const Text('Cancel')),
-              FilledButton(onPressed: () => Navigator.pop(ctx, 'save'), child: const Text('Save')),
-            ],
-          ),
-        );
-        if (choice == 'save') { await _save(); return; }
-        if (choice == 'discard' && context.mounted) Navigator.of(context).pop();
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('Edit parts — ${widget.itemType.label}'),
-          actions: [
-            TextButton(
-              onPressed: _confirmReset,
-              child: const Text('Reset', style: TextStyle(color: Colors.red)),
-            ),
-            FilledButton(onPressed: _save, child: const Text('Save')),
-            const SizedBox(width: 10),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _addGroup,
-          icon: const Icon(Icons.create_new_folder_outlined),
-          label: const Text('Add group'),
-        ),
-        body: _groupList.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.folder_open, size: 48, color: Colors.white38),
-                    const SizedBox(height: 12),
-                    const Text('No groups yet', style: TextStyle(color: Colors.white54)),
-                    const SizedBox(height: 16),
-                    OutlinedButton.icon(
-                      onPressed: _addGroup,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add a group'),
-                    ),
-                  ],
-                ),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 120),
-                itemCount: _groupList.length,
-                itemBuilder: (ctx, gi) {
-                  final groupName = _groupList[gi].key;
-                  final items = _groupList[gi].value;
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Group header
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(14, 10, 4, 4),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.folder_outlined, size: 18, color: Color(0xFFE8700A)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  groupName,
-                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                                ),
-                              ),
-                              // Move up/down
-                              if (gi > 0)
-                                IconButton(
-                                  icon: const Icon(Icons.keyboard_arrow_up, size: 20),
-                                  onPressed: () => _moveGroupUp(gi),
-                                  tooltip: 'Move group up',
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              if (gi < _groupList.length - 1)
-                                IconButton(
-                                  icon: const Icon(Icons.keyboard_arrow_down, size: 20),
-                                  onPressed: () => _moveGroupDown(gi),
-                                  tooltip: 'Move group down',
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              PopupMenuButton<String>(
-                                onSelected: (v) {
-                                  if (v == 'rename') _renameGroup(gi);
-                                  if (v == 'delete') _deleteGroup(gi);
-                                },
-                                itemBuilder: (_) => [
-                                  const PopupMenuItem(value: 'rename', child: ListTile(
-                                    leading: Icon(Icons.edit_outlined),
-                                    title: Text('Rename group'),
-                                    contentPadding: EdgeInsets.zero,
-                                  )),
-                                  const PopupMenuDivider(),
-                                  const PopupMenuItem(value: 'delete', child: ListTile(
-                                    leading: Icon(Icons.delete_outline, color: Colors.red),
-                                    title: Text('Delete group', style: TextStyle(color: Colors.red)),
-                                    contentPadding: EdgeInsets.zero,
-                                  )),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(height: 1),
-                        // Items list
-                        if (items.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Text(
-                              'No parts yet — tap + Add part',
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12),
-                            ),
-                          )
-                        else
-                          ...items.asMap().entries.map((entry) {
-                            final ii = entry.key;
-                            final item = entry.value;
-                            return ListTile(
-                              dense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
-                              title: Text(item, style: const TextStyle(fontSize: 14)),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (ii > 0)
-                                    IconButton(
-                                      icon: const Icon(Icons.keyboard_arrow_up, size: 18),
-                                      onPressed: () => _moveItemUp(gi, ii),
-                                      visualDensity: VisualDensity.compact,
-                                      tooltip: 'Move up',
-                                    ),
-                                  if (ii < items.length - 1)
-                                    IconButton(
-                                      icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-                                      onPressed: () => _moveItemDown(gi, ii),
-                                      visualDensity: VisualDensity.compact,
-                                      tooltip: 'Move down',
-                                    ),
-                                  PopupMenuButton<String>(
-                                    onSelected: (v) {
-                                      if (v == 'rename') _renameItem(gi, ii);
-                                      if (v == 'delete') _deleteItem(gi, ii);
-                                    },
-                                    itemBuilder: (_) => [
-                                      const PopupMenuItem(value: 'rename', child: ListTile(
-                                        leading: Icon(Icons.edit_outlined),
-                                        title: Text('Rename'),
-                                        contentPadding: EdgeInsets.zero,
-                                      )),
-                                      const PopupMenuDivider(),
-                                      const PopupMenuItem(value: 'delete', child: ListTile(
-                                        leading: Icon(Icons.delete_outline, color: Colors.red),
-                                        title: Text('Delete', style: TextStyle(color: Colors.red)),
-                                        contentPadding: EdgeInsets.zero,
-                                      )),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            );
-                          }),
-                        // Add item button
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
-                          child: TextButton.icon(
-                            onPressed: () => _addItem(gi),
-                            icon: const Icon(Icons.add, size: 16),
-                            label: const Text('Add part', style: TextStyle(fontSize: 13)),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              minimumSize: Size.zero,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-      ),
-    );
-  }
-}
-
-
-// ═════════════════════════════════════════════════════════════════════════════
-// AddToCommonPartsSheet  (v1.2 optional feature)
-// Bottom sheet shown from Part details — adds part name to a chosen group
-// ═════════════════════════════════════════════════════════════════════════════
-Future<void> showAddToCommonPartsSheet(
-  BuildContext context, {
-  required String partName,
-  required ItemType itemType,
-}) async {
-  final groups = await PresetGroupStorage.load(itemType);
-  if (!context.mounted) return;
-
-  String? selectedGroup = groups.keys.isNotEmpty ? groups.keys.first : null;
-
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (ctx) {
-      return StatefulBuilder(builder: (ctx, setLocalState) {
-        final bottomInset = MediaQuery.of(ctx).viewInsets.bottom +
-            MediaQuery.of(ctx).padding.bottom +
-            kPad;
-        return Padding(
-          padding: EdgeInsets.fromLTRB(kPad, kPad, kPad, bottomInset),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Add to Common Parts',
-                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '"$partName" will be added to your preset list for ${itemType.label}.',
-                style: const TextStyle(color: Colors.white54, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: selectedGroup,
-                decoration: const InputDecoration(labelText: 'Add to group'),
-                items: groups.isEmpty
-                    ? [const DropdownMenuItem(value: 'General', child: Text('General'))]
-                    : groups.keys
-                        .map((k) => DropdownMenuItem(value: k, child: Text(k)))
-                        .toList(),
-                onChanged: (v) => setLocalState(() => selectedGroup = v),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: selectedGroup == null
-                          ? null
-                          : () async {
-                              final group = selectedGroup!;
-                              final items = List<String>.from(groups[group] ?? []);
-                              final normalised = _normalizePartName(partName);
-                              if (items.any((i) => _normalizePartName(i) == normalised)) {
-                                Navigator.pop(ctx);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('"$partName" already exists in $group')),
-                                  );
-                                }
-                                return;
-                              }
-                              items.add(partName);
-                              groups[group] = items;
-                              await PresetGroupStorage.save(itemType, groups);
-                              if (ctx.mounted) Navigator.pop(ctx);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Added "$partName" to $group')),
-                                );
-                              }
-                            },
-                      child: const Text('Add to list'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      });
-    },
-  );
-}
-
-class QuickAddPresetsDialog extends StatefulWidget {
-  final List<String> items;
-  const QuickAddPresetsDialog({super.key, required this.items});
-
-  @override
-  State<QuickAddPresetsDialog> createState() => _QuickAddPresetsDialogState();
-}
-
-class _QuickAddPresetsDialogState extends State<QuickAddPresetsDialog> {
-  final Set<String> _selected = {};
-  final List<GlobalKey> _keys = [];
-
-  // Drag state
-  bool _isDragging = false;
-  bool _dragSelecting = true; // true = selecting, false = deselecting
-
-  @override
-  void initState() {
-    super.initState();
-    _keys.addAll(List.generate(widget.items.length, (_) => GlobalKey()));
-  }
-
-  void _handleDragUpdate(Offset globalPos) {
-    for (int i = 0; i < _keys.length; i++) {
-      final ctx = _keys[i].currentContext;
-      if (ctx == null) continue;
-      final box = ctx.findRenderObject() as RenderBox?;
-      if (box == null) continue;
-      final itemPos = box.localToGlobal(Offset.zero);
-      final itemRect = itemPos & box.size;
-      if (itemRect.contains(globalPos)) {
-        final item = widget.items[i];
-        setState(() {
-          if (_dragSelecting) {
-            _selected.add(item);
-          } else {
-            _selected.remove(item);
-          }
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add common parts'),
-      content: SizedBox(
-        width: 520,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.swipe_down, size: 16, color: Colors.white38),
-                SizedBox(width: 6),
-                Text(
-                  'Tap or slide finger to select multiple',
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.55,
-              ),
-              child: GestureDetector(
-                onPanStart: (details) {
-                  _isDragging = true;
-                  // Figure out if we're selecting or deselecting based on first item touched
-                  for (int i = 0; i < _keys.length; i++) {
-                    final ctx = _keys[i].currentContext;
-                    if (ctx == null) continue;
-                    final box = ctx.findRenderObject() as RenderBox?;
-                    if (box == null) continue;
-                    final itemPos = box.localToGlobal(Offset.zero);
-                    final itemRect = itemPos & box.size;
-                    if (itemRect.contains(details.globalPosition)) {
-                      _dragSelecting = !_selected.contains(widget.items[i]);
-                      break;
-                    }
-                  }
-                  _handleDragUpdate(details.globalPosition);
-                },
-                onPanUpdate: (details) {
-                  if (_isDragging) _handleDragUpdate(details.globalPosition);
-                },
-                onPanEnd: (_) => _isDragging = false,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: widget.items.length,
-                  itemBuilder: (ctx, i) {
-                    final item = widget.items[i];
-                    final isSelected = _selected.contains(item);
-                    return GestureDetector(
-                      key: _keys[i],
-                      onTap: () => setState(() {
-                        if (isSelected) {
-                          _selected.remove(item);
-                        } else {
-                          _selected.add(item);
-                        }
-                      }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
-                        margin: const EdgeInsets.only(bottom: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFFE8700A).withValues(alpha: 0.15)
-                              : Colors.white.withValues(alpha: 0.04),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isSelected
-                                ? const Color(0xFFE8700A).withValues(alpha: 0.6)
-                                : Colors.white.withValues(alpha: 0.08),
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 120),
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? const Color(0xFFE8700A)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(5),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? const Color(0xFFE8700A)
-                                      : Colors.white24,
-                                ),
-                              ),
-                              child: isSelected
-                                  ? const Icon(Icons.check, size: 14, color: Colors.black)
-                                  : null,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                item,
-                                style: TextStyle(
-                                  color: isSelected ? Colors.white : Colors.white70,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w700
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text('Cancel'),
-        ),
-        if (_selected.isNotEmpty)
-          TextButton(
-            onPressed: () => setState(() => _selected.clear()),
-            child: const Text('Clear'),
-          ),
-        FilledButton(
-          onPressed: _selected.isEmpty
-              ? null
-              : () => Navigator.pop(context, _selected),
-          child: Text(_selected.isEmpty ? 'Add' : 'Add (${_selected.length})'),
-        ),
-      ],
-    );
-  }
-}
-
 /// ----------------------------
 /// Parts Search Tab
 /// ----------------------------
@@ -10336,18 +8951,6 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         if (cats is List) await PartCategoryStorage.save(List<String>.from(cats));
         final plats = decoded['listing_platforms'];
         if (plats is List) await PlatformStorage.save(List<String>.from(plats));
-        final presets = decoded['preset_groups'];
-        if (presets is Map<String, dynamic>) {
-          for (final type in ItemType.values) {
-            final data = presets[type.name];
-            if (data is Map<String, dynamic>) {
-              await PresetGroupStorage.save(
-                type,
-                data.map((k, v) => MapEntry(k, List<String>.from(v as List))),
-              );
-            }
-          }
-        }
       }
 
       if (context.mounted) {
