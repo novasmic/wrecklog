@@ -3723,19 +3723,26 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
   final Set<String> _selectedPartIds = {};
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
     _v = Vehicle.fromJson(widget.vehicle.toJson());
-    _searchCtrl.addListener(() {
-      setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
-    });
+    _searchCtrl.addListener(_onSearchChanged);
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (mounted) setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
+    });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _searchCtrl.dispose();
     super.dispose();
@@ -4098,10 +4105,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
   }
 
   /// Summary banner: prominent "X parts need listing" + secondary stats.
-  Widget _buildStatusSummaryStrip(List<Part> allParts) {
-    final needsCount  = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.needsListing).length;
-    final listedCount = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.listed).length;
-    final soldCount   = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.sold).length;
+  /// Accepts pre-computed counts to avoid redundant iteration in build().
+  Widget _buildStatusSummaryStrip(int needsCount, int listedCount, int soldCount) {
 
     Widget statChip(String label, int count, Color color) {
       return Container(
@@ -4262,11 +4267,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     );
   }
 
-  /// Groups parts into Needs Listing → Listed → Sold sections.
-  List<Widget> _buildGroupedParts(List<Part> parts, BuildContext context) {
-    final needsListing = parts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.needsListing).toList();
-    final listed       = parts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.listed).toList();
-    final sold         = parts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.sold).toList();
+  /// Groups pre-partitioned parts into Needs Listing → Listed → Sold sections.
+  List<Widget> _buildGroupedParts(
+      List<Part> needsListing, List<Part> listed, List<Part> sold,
+      BuildContext context) {
 
     return [
       if (needsListing.isNotEmpty)
@@ -4308,6 +4312,26 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     final pl = _v.profitLossCents;
     final plColor = profitColor(pl);
     final shownParts = _filteredParts();
+
+    // Single pass over all parts → summary strip counts.
+    // Single pass over filtered parts → section groups.
+    // Previously this was 7 separate .where() passes; now it's 2.
+    var needsAllCount = 0, listedAllCount = 0, soldAllCount = 0;
+    for (final p in _v.parts) {
+      switch (_partWorkflowStatus(p)) {
+        case _WorkflowStatus.needsListing: needsAllCount++; break;
+        case _WorkflowStatus.listed:       listedAllCount++; break;
+        case _WorkflowStatus.sold:         soldAllCount++; break;
+      }
+    }
+    final needsGroup = <Part>[], listedGroup = <Part>[], soldGroup = <Part>[];
+    for (final p in shownParts) {
+      switch (_partWorkflowStatus(p)) {
+        case _WorkflowStatus.needsListing: needsGroup.add(p); break;
+        case _WorkflowStatus.listed:       listedGroup.add(p); break;
+        case _WorkflowStatus.sold:         soldGroup.add(p); break;
+      }
+    }
 
     final infoParts = <String>[];
     if ((_v.identifier ?? '').trim().isNotEmpty) infoParts.add(_v.identifier!.trim());
@@ -4484,7 +4508,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
 
           // ── Workflow summary banner ───────────────────────────────────
           if (_v.parts.isNotEmpty)
-            _buildStatusSummaryStrip(_v.parts),
+            _buildStatusSummaryStrip(needsAllCount, listedAllCount, soldAllCount),
           if (_v.parts.isNotEmpty) const SizedBox(height: 12),
 
           // ── Side filter chips ─────────────────────────────────────────
@@ -4552,7 +4576,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
                 ],
               ),
             )
-          else ..._buildGroupedParts(shownParts, context),
+          else ..._buildGroupedParts(needsGroup, listedGroup, soldGroup, context),
             ],
           ),
           if (_selectMode)
