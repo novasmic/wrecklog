@@ -3815,6 +3815,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
 
     // Clean up photos for this part
     await PhotoStorage.deleteAllForOwner('part', p.id);
+    if (!mounted) return;
     setState(() => _v.parts.removeWhere((x) => x.id == p.id));
   }
 
@@ -3823,7 +3824,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       context: context,
       builder: (_) => EditPartDialog(part: p),
     );
-    if (updated == null) return;
+    if (updated == null || !mounted) return;
     setState(() {
       final idx = _v.parts.indexWhere((x) => x.id == p.id);
       if (idx >= 0) {
@@ -3845,7 +3846,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
         ),
       ),
     );
-    if (updated == null) return;
+    if (updated == null || !mounted) return;
     setState(() {
       final idx = _v.parts.indexWhere((x) => x.id == updated.id);
       if (idx >= 0) _v.parts[idx] = updated;
@@ -3884,7 +3885,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     );
 
     ctrl.dispose();
-    if (cents == null) return;
+    if (cents == null || !mounted) return;
 
     setState(() {
       p.state = PartState.sold;
