@@ -3901,6 +3901,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     setState(() {
       p.state = p.hasLiveListings ? PartState.listed : PartState.removed;
       p.salePriceCents = null;
+      p.dateSold = null;   // must clear — _partWorkflowStatus checks dateSold != null
       p.updatedAt = DateTime.now();
     });
   }
@@ -5277,7 +5278,12 @@ class PartCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final days = part.daysInStock();
     final state = part.state;
-    final isSold     = state == PartState.sold;
+    // Mirror _partWorkflowStatus sold criteria exactly so badge always matches
+    // the section the part appears in — even if normalizePartStateFromListings
+    // hasn't been called yet (old data, edge cases).
+    final isSold     = state == PartState.sold ||
+                       part.salePriceCents != null ||
+                       part.dateSold != null;
     final isScrapped = state == PartState.scrapped;
     final isListed   = part.hasLiveListings;
 
@@ -5861,6 +5867,9 @@ class _AddPartScreenState extends State<AddPartScreen> {
       dateListed: dateListed,
       dateSold: _dateSold,
     );
+
+    // Sync state with sale price / listing data, same as EditPartDialog does.
+    normalizePartStateFromListings(p);
 
     if (!mounted) return;
     Navigator.of(context).pop(p);
