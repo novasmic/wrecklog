@@ -1450,11 +1450,17 @@ String _titleOrFallback(Vehicle v) {
 }
 
 void normalizePartStateFromListings(Part p) {
-  if (p.state == PartState.sold || p.state == PartState.scrapped) return;
-  p.state = p.hasLiveListings ? PartState.listed : PartState.removed;
-  if (p.state != PartState.sold) {
-    p.salePriceCents = null;
+  // If sold data exists, ensure PartState reflects it.
+  // This handles the case where a user enters a sale price/date via
+  // the edit dialog without going through the explicit "Mark sold" flow.
+  if (p.salePriceCents != null || p.dateSold != null) {
+    p.state = PartState.sold;
+    return;
   }
+  // Honour explicit scrapped state — never override it.
+  if (p.state == PartState.scrapped) return;
+  // Sync state from listing activity.
+  p.state = p.hasLiveListings ? PartState.listed : PartState.removed;
 }
 
 Uri? _safeParseUrl(String raw) {
