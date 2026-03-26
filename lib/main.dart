@@ -379,8 +379,12 @@ class _AppShellState extends State<AppShell> {
           SettingsTab(
             vehicles: _vehicles,
             onRestoreVehicles: (restored) async {
+              // Save directly — do NOT use the debounced _persist() here.
+              // _persist() schedules a 500ms timer and returns immediately,
+              // so "Restore complete" would show before data is on disk.
+              // A crash or power loss in that window loses the restore.
+              await Storage.saveVehicles(restored);
               setState(() => _vehicles = restored);
-              await _persist();
             },
             onWipeAll: () async {
               await Storage.wipeAll();
