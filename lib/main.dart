@@ -648,6 +648,9 @@ class Part {
 
   bool get hasLiveListings => listings.any((l) => l.url.trim().isNotEmpty && l.isLive);
 
+  /// True if part has at least one listing URL (live or not) — used for workflow status.
+  bool get hasAnyListingUrl => listings.any((l) => l.url.trim().isNotEmpty);
+
   /// Normalized part number for matching/grouping — dashes and spaces removed, uppercased.
   String? get normalizedPartNumber =>
       partNumber == null ? null : normalizePartNumber(partNumber!);
@@ -3873,6 +3876,18 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
 /// ----------------------------
 enum _PartsViewFilter { all, listed, notListed }
 
+/// Derived listing workflow status — never stored, always computed from part data.
+enum _WorkflowStatus { needsListing, listed, sold }
+
+_WorkflowStatus _partWorkflowStatus(Part p) {
+  if (p.salePriceCents != null || p.dateSold != null ||
+      p.state == PartState.sold || p.state == PartState.scrapped) {
+    return _WorkflowStatus.sold;
+  }
+  if (p.hasAnyListingUrl) return _WorkflowStatus.listed;
+  return _WorkflowStatus.needsListing;
+}
+
 class VehicleDetailScreen extends StatefulWidget {
   final Vehicle vehicle;
   /// All vehicles — used to generate globally-unique stock IDs.
@@ -3896,7 +3911,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
   final Set<String> _selectedPartIds = {};
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
-  List<String> _categories = List.from(kPartCategories);
 
   @override
   void initState() {
@@ -3905,9 +3919,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     _searchCtrl.addListener(() {
       setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
     });
-    PartCategoryStorage.load().then((cats) {
-      if (mounted) setState(() => _categories = cats);
-    }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
   }
 
   @override
@@ -4322,72 +4333,98 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
     });
   }
 
-  List<Widget> _buildGroupedParts(List<Part> parts, BuildContext context) {
-    // Group parts by category
-    final Map<String, List<Part>> groups = {};
-    for (final p in parts) {
-      final key = (p.category?.trim().isNotEmpty == true) ? p.category! : 'Uncategorised';
-      groups.putIfAbsent(key, () => []).add(p);
+  /// Summary strip showing Needs Listing / Listed / Sold counts for all parts.
+  Widget _buildStatusSummaryStrip(List<Part> allParts) {
+    final needsCount  = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.needsListing).length;
+    final listedCount = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.listed).length;
+    final soldCount   = allParts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.sold).length;
+
+    Widget chip(String label, int count, Color color, bool filled) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: filled ? color.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: filled ? 0.35 : 0.15)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 6, height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 5),
+          Text('$count',
+              style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.7), fontWeight: FontWeight.w700)),
+        ]),
+      );
     }
 
-    // Order: user-defined categories first (in their order), custom next, Uncategorised last
-    final ordered = [
-      ..._categories.where(groups.containsKey),
-      ...groups.keys.where((k) => !_categories.contains(k) && k != 'Uncategorised'),
-      if (groups.containsKey('Uncategorised')) 'Uncategorised',
-    ];
+    return Row(
+      children: [
+        if (needsCount > 0) ...[
+          chip('Needs Listing', needsCount, const Color(0xFFE8400A), true),
+          const SizedBox(width: 8),
+        ],
+        if (listedCount > 0) ...[
+          chip('Listed', listedCount, Colors.green, false),
+          const SizedBox(width: 8),
+        ],
+        if (soldCount > 0)
+          chip('Sold', soldCount, Colors.white38, false),
+      ],
+    );
+  }
 
-    return ordered.map((cat) {
-      final catParts = groups[cat]!;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              initiallyExpanded: true,
-              tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-              backgroundColor: Colors.white.withValues(alpha: 0.03),
-              collapsedBackgroundColor: Colors.white.withValues(alpha: 0.03),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-              ),
-              collapsedShape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-              ),
-              title: Row(
-                children: [
-                  Container(
-                    width: 3,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8700A),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+  /// Builds a single status section (header + part cards).
+  Widget _buildStatusSection(
+      String title, List<Part> parts, Color accentColor, BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            initiallyExpanded: true,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            backgroundColor: Colors.white.withValues(alpha: 0.03),
+            collapsedBackgroundColor: Colors.white.withValues(alpha: 0.03),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: accentColor.withValues(alpha: 0.25)),
+            ),
+            collapsedShape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: accentColor.withValues(alpha: 0.15)),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  width: 3, height: 16,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    cat,
-                    style: const TextStyle(
+                ),
+                const SizedBox(width: 10),
+                Text(title,
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${catParts.length}',
+                      color: accentColor,
+                    )),
+                const SizedBox(width: 8),
+                Text('${parts.length}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.35),
-                    ),
-                  ),
-                ],
-              ),
-              children: catParts.map((p) => Padding(
+                      color: accentColor.withValues(alpha: 0.55),
+                    )),
+              ],
+            ),
+            children: parts.map((p) => Padding(
                 key: ValueKey(p.id),
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
                 child: GestureDetector(
@@ -4441,11 +4478,26 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
                   ),
                 ),
               )).toList(),
-            ),
           ),
         ),
-      );
-    }).toList();
+      ),
+    );
+  }
+
+  /// Groups parts into Needs Listing → Listed → Sold sections.
+  List<Widget> _buildGroupedParts(List<Part> parts, BuildContext context) {
+    final needsListing = parts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.needsListing).toList();
+    final listed       = parts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.listed).toList();
+    final sold         = parts.where((p) => _partWorkflowStatus(p) == _WorkflowStatus.sold).toList();
+
+    return [
+      if (needsListing.isNotEmpty)
+        _buildStatusSection('Needs Listing', needsListing, const Color(0xFFE8400A), context),
+      if (listed.isNotEmpty)
+        _buildStatusSection('Listed', listed, Colors.green, context),
+      if (sold.isNotEmpty)
+        _buildStatusSection('Sold / Done', sold, Colors.white38, context),
+    ];
   }
 
   List<Part> _filteredParts() {
@@ -4772,6 +4824,11 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen> {
             ),
           ),
           const SizedBox(height: 12),
+
+          // ── Parts status summary strip ───────────────────────────────────
+          if (_v.parts.isNotEmpty)
+            _buildStatusSummaryStrip(_v.parts),
+          if (_v.parts.isNotEmpty) const SizedBox(height: 12),
 
           if (shownParts.isEmpty)
             AppCard(
@@ -5530,13 +5587,12 @@ class PartCard extends StatelessWidget {
 
     // ── State badge ──────────────────────────────────────────────────────────
     final (badgeLabel, badgeColor, badgeFilled) = isScrapped
-        ? ('SCRAPPED', Colors.red,                   true)
+        ? ('SCRAPPED',      Colors.red,                    true)
         : isSold
-            ? ('Sold',    Colors.green,              false)
+            ? ('Sold',          Colors.green,              false)
             : isListed
-                ? ('Listed',  Colors.green,          false)
-                : ('In Stock', Colors.white38,       false);
-
+                ? ('Listed',        Colors.green,          false)
+                : ('Needs Listing', const Color(0xFFE8400A), true);
 
     // ── Left bar colour ───────────────────────────────────────────────────────
     final barColor = isScrapped
@@ -5545,7 +5601,7 @@ class PartCard extends StatelessWidget {
             ? const Color(0xFF2E7D32)
             : isListed
                 ? Colors.green
-                : const Color(0xFFE8700A);
+                : const Color(0xFFE8400A);
 
     // ── Stat line: stock ID · age · price ────────────────────────────────────
     final statParts = <String>[];
