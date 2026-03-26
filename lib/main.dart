@@ -556,7 +556,7 @@ class Listing {
       }
     }
     return Listing(
-      id: j['id'] as String,
+      id: (j['id'] as String?) ?? newId(),
       platform: platform,
       url: (j['url'] as String?) ?? '',
       isLive: (j['isLive'] as bool?) ?? (j['isActive'] as bool?) ?? true,
@@ -715,7 +715,7 @@ class Part {
   static Part fromJson(Map<String, dynamic> j) {
     final listingsJson = (j['listings'] as List<dynamic>?) ?? const [];
     return Part(
-      id: j['id'] as String,
+      id: (j['id'] as String?) ?? newId(),
       name: (j['name'] as String?) ?? '',
       state: PartStateX.fromString((j['state'] as String?) ?? 'removed'),
       location: (j['location'] as String?),
@@ -857,7 +857,7 @@ class Vehicle {
   static Vehicle fromJson(Map<String, dynamic> j) {
     final partsJson = (j['parts'] as List<dynamic>?) ?? const [];
     return Vehicle(
-      id: j['id'] as String,
+      id: (j['id'] as String?) ?? newId(),
       make: (j['make'] as String?) ?? '',
       model: (j['model'] as String?) ?? '',
       year: (j['year'] as num?)?.toInt() ?? DateTime.now().year,
