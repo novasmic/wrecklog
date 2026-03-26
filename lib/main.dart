@@ -3650,7 +3650,9 @@ _WorkflowStatus _partWorkflowStatus(Part p) {
       p.state == PartState.sold || p.state == PartState.scrapped) {
     return _WorkflowStatus.sold;
   }
-  if (p.hasAnyListingUrl) return _WorkflowStatus.listed;
+  // Use hasLiveListings (not hasAnyListingUrl) so section grouping matches
+  // the PartCard badge — both require at least one active listing.
+  if (p.hasLiveListings) return _WorkflowStatus.listed;
   return _WorkflowStatus.needsListing;
 }
 
