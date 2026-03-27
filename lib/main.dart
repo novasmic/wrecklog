@@ -1039,7 +1039,26 @@ String _generateStockId(Set<String> existing) {
   while (true) {
     final suffix = List.generate(6, (_) => _stockIdChars[rng.nextInt(_stockIdChars.length)]).join();
     final candidate = 'WL-$suffix';
-    if (!existing.contains(candidate)) return candidate;
+    if (!existing.contains(candidate) && !existing.any((id) => id.startsWith('$candidate-'))) return candidate;
+  }
+}
+
+/// Generates [count] stock IDs sharing the same base for identical parts.
+/// Returns e.g. ["WL-AB12CD-1", "WL-AB12CD-2", "WL-AB12CD-3"].
+List<String> generateStockIdBatch(List<Vehicle> allVehicles, int count) {
+  final existing = <String>{};
+  for (final v in allVehicles) {
+    for (final p in v.parts) {
+      if (p.stockId != null) existing.add(p.stockId!);
+    }
+  }
+  final rng = math.Random.secure();
+  while (true) {
+    final suffix = List.generate(6, (_) => _stockIdChars[rng.nextInt(_stockIdChars.length)]).join();
+    final base = 'WL-$suffix';
+    if (!existing.contains(base) && !existing.any((id) => id.startsWith('$base-'))) {
+      return List.generate(count, (i) => '$base-${i + 1}');
+    }
   }
 }
 
@@ -3789,13 +3808,12 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       );
       if (!mounted) return;
     }
-    final created = await Navigator.of(context).push<Part>(
+    final created = await Navigator.of(context).push<List<Part>>(
       MaterialPageRoute(builder: (_) => AddPartScreen(allVehicles: _allVehiclesWithCurrent(), vehicle: _v)),
     );
-    if (!mounted || created == null) return;
+    if (!mounted || created == null || created.isEmpty) return;
     setState(() {
-      normalizePartStateFromListings(created);
-      _v.parts.insert(0, created);
+      _v.parts.insertAll(0, created);
     });
   }
 
@@ -5908,41 +5926,48 @@ class _AddPartScreenState extends State<AddPartScreen> {
     }
 
     _saved = true;
-    final p = Part(
-      id: _partId,
-      name: _nameCtrl.text.trim(),
-      state: PartState.removed, // status unchanged — user decides when to list
-      createdAt: DateTime.now(),
-      location: loc.isEmpty ? null : loc,
-      notes: notes.isEmpty ? null : notes,
-      askingPriceCents: askCents,
-      salePriceCents: saleCents,
-      partNumber: pn.isEmpty ? null : pn,
-      qty: qty < 1 ? 1 : qty,
-      listings: listings,
-      vehicleId: widget.vehicle.id,
-      stockId: _stockId,
-      category: _category,
-      vehicleMake: _vMake,
-      vehicleModel: _vModel,
-      vehicleYear: _vYear,
-      vehicleTrim: _vTrim,
-      vehicleEngine: _vEngine,
-      vehicleTransmission: _vTransmission,
-      vehicleDrivetrain: _vDrivetrain,
-      vehicleUsageValue: _vUsageValue,
-      vehicleUsageUnit: _vUsageUnit,
-      partCondition: condition.isEmpty ? null : condition,
-      side: _side,
-      dateListed: dateListed,
-      dateSold: _dateSold,
-    );
+    final clampedQty = qty.clamp(1, 999);
+    final stockIds = clampedQty > 1
+        ? generateStockIdBatch(widget.allVehicles, clampedQty)
+        : [_stockId];
+    final now = DateTime.now();
 
-    // Sync state with sale price / listing data, same as EditPartDialog does.
-    normalizePartStateFromListings(p);
+    final parts = List.generate(clampedQty, (i) {
+      final p = Part(
+        id: i == 0 ? _partId : newId(),
+        name: _nameCtrl.text.trim(),
+        state: PartState.removed,
+        createdAt: now,
+        location: loc.isEmpty ? null : loc,
+        notes: notes.isEmpty ? null : notes,
+        askingPriceCents: askCents,
+        salePriceCents: saleCents,
+        partNumber: pn.isEmpty ? null : pn,
+        qty: 1,
+        listings: i == 0 ? listings : [],
+        vehicleId: widget.vehicle.id,
+        stockId: stockIds[i],
+        category: _category,
+        vehicleMake: _vMake,
+        vehicleModel: _vModel,
+        vehicleYear: _vYear,
+        vehicleTrim: _vTrim,
+        vehicleEngine: _vEngine,
+        vehicleTransmission: _vTransmission,
+        vehicleDrivetrain: _vDrivetrain,
+        vehicleUsageValue: _vUsageValue,
+        vehicleUsageUnit: _vUsageUnit,
+        partCondition: condition.isEmpty ? null : condition,
+        side: _side,
+        dateListed: i == 0 ? dateListed : null,
+        dateSold: _dateSold,
+      );
+      normalizePartStateFromListings(p);
+      return p;
+    });
 
     if (!mounted) return;
-    Navigator.of(context).pop(p);
+    Navigator.of(context).pop(parts);
   }
 
   @override
@@ -6014,6 +6039,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                           controller: _qtyCtrl,
                           decoration: const InputDecoration(labelText: 'Qty'),
                           keyboardType: TextInputType.number,
+                          onChanged: (_) => setState(() {}),
                           validator: (v) {
                             final n = int.tryParse((v ?? '').trim());
                             if (n == null || n < 1) return 'Min 1';
@@ -6299,36 +6325,40 @@ class _AddPartScreenState extends State<AddPartScreen> {
 
                   divider,
 
-                  // ── Stock ID (collapsed by default) ───────────────────
-                  Row(
-                    children: [
-                      const Icon(Icons.qr_code_outlined, size: 16, color: Colors.white24),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Stock ID: ',
-                        style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
-                      ),
-                      Text(
-                        _stockId,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                          letterSpacing: 1.2,
-                          color: Color(0xFFE8700A),
-                          fontWeight: FontWeight.w700,
+                  // ── Stock ID ──────────────────────────────────────────
+                  Builder(builder: (context) {
+                    final qtyVal = (int.tryParse(_qtyCtrl.text.trim()) ?? 1).clamp(1, 999);
+                    final displayId = qtyVal > 1 ? '$_stockId-1 … -$qtyVal' : _stockId;
+                    return Row(
+                      children: [
+                        const Icon(Icons.qr_code_outlined, size: 16, color: Colors.white24),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Stock ID: ',
+                          style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
                         ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.copy_outlined, size: 16),
-                        color: Colors.white24,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: 'Copy stock ID',
-                        onPressed: () => copyToClipboard(context, _stockId, message: 'Stock ID copied'),
-                      ),
-                    ],
-                  ),
+                        Text(
+                          displayId,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            letterSpacing: 1.2,
+                            color: Color(0xFFE8700A),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.copy_outlined, size: 16),
+                          color: Colors.white24,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Copy stock ID',
+                          onPressed: () => copyToClipboard(context, _stockId, message: 'Stock ID copied'),
+                        ),
+                      ],
+                    );
+                  }),
                 ],
               ),
             ),
