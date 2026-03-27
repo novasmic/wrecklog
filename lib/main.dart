@@ -995,10 +995,17 @@ int? parseMoneyToCents(String input) {
 String formatDateShort(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-// Counter suffix ensures uniqueness even when called in a tight loop on
-// platforms where microsecond clock resolution is coarser than 1 µs.
-int _newIdCounter = 0;
-String newId() => '${DateTime.now().microsecondsSinceEpoch}_${_newIdCounter++}';
+/// Generates a UUID v4 string — globally unique internal ID.
+/// Used for part IDs, vehicle IDs, listing IDs, etc.
+/// No external package required.
+String newId() {
+  final rng = Random.secure();
+  final b = List<int>.generate(16, (_) => rng.nextInt(256));
+  b[6] = (b[6] & 0x0f) | 0x40; // version 4
+  b[8] = (b[8] & 0x3f) | 0x80; // variant 10xx
+  final h = b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+  return '${h.substring(0,8)}-${h.substring(8,12)}-${h.substring(12,16)}-${h.substring(16,20)}-${h.substring(20)}';
+}
 
 String normalizeIdentifier(String input) => input.trim().toUpperCase();
 
@@ -6143,6 +6150,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                       hintText: 'Optional',
                       prefixText: '\$',
                       prefixIcon: Icon(Icons.payments_outlined),
+                      helperText: 'Only enter if this part has already sold',
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     textInputAction: TextInputAction.next,
