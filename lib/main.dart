@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'io_file_stub.dart' if (dart.library.io) 'io_file_io.dart';
 import 'home_screen.dart';
+import 'db/migration_service.dart';
+import 'db/vehicle_store.dart';
 // Web-only download (safe on Android/iOS via conditional import)
 import 'web_download_stub.dart' if (dart.library.html) 'web_download_web.dart';
 
@@ -62,6 +64,7 @@ class PartCategoryStorage {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await billing.init();
+  await MigrationService.runIfNeeded();
   if (kDebugMode) await _loadDebugProFlag();
   runApp(const WreckLogApp());
 }
@@ -229,7 +232,7 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final v = await Storage.loadVehicles();
+    final v = await VehicleStore.loadVehicles();
     if (!mounted) return;
     setState(() {
       _vehicles = v;
@@ -248,8 +251,8 @@ class _AppShellState extends State<AppShell> {
   Future<void> _persist() async {
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 500), () {
-      Storage.saveVehicles(_vehicles).catchError((Object e) {
-        if (kDebugMode) debugPrint('Storage.saveVehicles failed: $e');
+      VehicleStore.saveVehicles(_vehicles).catchError((Object e) {
+        if (kDebugMode) debugPrint('VehicleStore.saveVehicles failed: $e');
         // Show a snackbar on the next frame if context is still valid.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -383,11 +386,11 @@ class _AppShellState extends State<AppShell> {
               // _persist() schedules a 500ms timer and returns immediately,
               // so "Restore complete" would show before data is on disk.
               // A crash or power loss in that window loses the restore.
-              await Storage.saveVehicles(restored);
+              await VehicleStore.saveVehicles(restored);
               setState(() => _vehicles = restored);
             },
             onWipeAll: () async {
-              await Storage.wipeAll();
+              await VehicleStore.wipeAll();
               await _load();
             },
           ),
@@ -3787,7 +3790,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       final updated = widget.allVehicles
           .map((v) => v.id == _v.id ? _v : v)
           .toList();
-      Storage.saveVehicles(updated);
+      VehicleStore.saveVehicles(updated);
     }
   }
 
@@ -8957,10 +8960,10 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/$filename');
       await file.writeAsString(json);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/json')],
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path, mimeType: 'application/json')],
         subject: 'WreckLog Backup $stamp',
-      );
+      ));
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -9247,10 +9250,10 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
           );
         }
       } else {
-        await Share.shareXFiles(
-          [XFile(zipPath, mimeType: 'application/zip')],
+        await SharePlus.instance.share(ShareParams(
+          files: [XFile(zipPath, mimeType: 'application/zip')],
           subject: 'WreckLog Photo Backup $stamp',
-        );
+        ));
       }
     } catch (e) {
       if (context.mounted) {
@@ -9876,10 +9879,10 @@ class _PartsDataScreenState extends State<PartsDataScreen> {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/wrecklog_parts_export.json');
       await file.writeAsString(content);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/json')],
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path, mimeType: 'application/json')],
         subject: 'WreckLog Parts Export',
-      );
+      ));
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -9918,10 +9921,10 @@ class _PartsDataScreenState extends State<PartsDataScreen> {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/wrecklog_parts_export.csv');
       await file.writeAsString(content);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'text/csv')],
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path, mimeType: 'text/csv')],
         subject: 'WreckLog Parts Export',
-      );
+      ));
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

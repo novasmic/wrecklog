@@ -380,10 +380,10 @@ class _FullscreenViewerState extends State<_FullscreenViewer> {
         // Web — decode base64 to bytes and share as XFile
         final bytes = base64Decode(photo.pathOrData);
         final xfile = XFile.fromData(bytes, mimeType: 'image/jpeg', name: '${photo.id}.jpg');
-        await Share.shareXFiles([xfile], text: 'WreckLog photo');
+        await SharePlus.instance.share(ShareParams(files: [xfile], text: 'WreckLog photo'));
       } else {
         // Mobile — share the file directly
-        await Share.shareXFiles([XFile(photo.pathOrData)], text: 'WreckLog photo');
+        await SharePlus.instance.share(ShareParams(files: [XFile(photo.pathOrData)], text: 'WreckLog photo'));
       }
     } on FormatException {
       if (mounted) {
