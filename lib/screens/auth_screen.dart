@@ -273,7 +273,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             style: TextStyle(fontSize: 11, color: scheme.onSurface.withValues(alpha: 0.4)),
                           ),
                           GestureDetector(
-                            onTap: () => launchUrl(Uri.parse('https://novasmic.com.au/privacy/')),
+                            onTap: () => launchUrl(Uri.parse('https://wrecklog.com.au/privacy/')),
                             child: Text(
                               'Privacy Policy',
                               style: TextStyle(fontSize: 11, color: scheme.primary, decoration: TextDecoration.underline),
