@@ -13,16 +13,19 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = true;
   bool _loading = false;
   bool _obscure = true;
+  bool _obscureConfirm = true; // ignore: prefer_final_fields
   String? _error;
 
   final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  final _confirmCtrl  = TextEditingController();
   final _formKey      = GlobalKey<FormState>();
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _confirmCtrl.dispose();
     super.dispose();
   }
 
@@ -135,6 +138,30 @@ class _AuthScreenState extends State<AuthScreen> {
                         return null;
                       },
                     ),
+                    // Confirm password (register only)
+                    if (!_isLogin) ...[
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: _confirmCtrl,
+                        obscureText: _obscureConfirm,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _submit(),
+                        decoration: InputDecoration(
+                          labelText: 'Confirm Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                            onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                          ),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Please confirm your password.';
+                          if (v != _passwordCtrl.text) return 'Passwords do not match.';
+                          return null;
+                        },
+                      ),
+                    ],
+
                     const SizedBox(height: 8),
 
                     // Forgot password (login only)

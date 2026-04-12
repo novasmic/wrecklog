@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 class AuthService extends ChangeNotifier {
@@ -12,11 +13,25 @@ class AuthService extends ChangeNotifier {
     _auth.authStateChanges().listen((_) => notifyListeners());
   }
 
+  Future<void> _ensureFirebase() async {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp()
+            .timeout(const Duration(seconds: 10));
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('AuthService: Firebase init error: $e');
+      rethrow;
+    }
+  }
+
   Future<void> signIn(String email, String password) async {
+    await _ensureFirebase();
     await _auth.signInWithEmailAndPassword(email: email, password: password);
   }
 
   Future<void> register(String email, String password) async {
+    await _ensureFirebase();
     await _auth.createUserWithEmailAndPassword(email: email, password: password);
   }
 
