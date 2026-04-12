@@ -20,6 +20,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'landing_screen.dart';
 import 'app_services.dart';
+import 'screens/auth_screen.dart';
 import 'services/facebook_service.dart';
 import 'services/analytics_service.dart';
 import 'services/firestore_service.dart';
@@ -8651,6 +8652,63 @@ class _SettingsTabState extends State<SettingsTab> {
           ListView(
             padding: const EdgeInsets.all(kPad),
             children: [
+              // ── Account ───────────────────────────────────────────────
+              AnimatedBuilder(
+                animation: auth,
+                builder: (context, _) {
+                  final user = auth.currentUser;
+                  return AppCard(
+                    child: user == null
+                        ? InkWell(
+                            borderRadius: BorderRadius.circular(kRadius),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const AuthScreen()),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.person_outline, color: Color(0xFFE8700A)),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Sign in', style: TextStyle(fontWeight: FontWeight.w700)),
+                                      Text('Sync your data across devices', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                Icon(Icons.chevron_right, color: Colors.white24),
+                              ],
+                            ),
+                          )
+                        : Row(
+                            children: [
+                              const Icon(Icons.person, color: Color(0xFFE8700A)),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Account', style: TextStyle(fontWeight: FontWeight.w700)),
+                                    Text(user.email ?? '', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  await auth.signOut();
+                                  if (context.mounted) setState(() {});
+                                },
+                                child: const Text('Sign Out', style: TextStyle(color: Colors.white38)),
+                              ),
+                            ],
+                          ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: kPad),
+
               // ── Pro / Monetisation ─────────────────────────────────────
           AppCard(
             child: Column(
