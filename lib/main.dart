@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui';
 import 'io_file_stub.dart' if (dart.library.io) 'io_file_io.dart';
 import 'home_screen.dart';
 import 'db/migration_service.dart';
@@ -20,6 +21,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'landing_screen.dart';
 import 'app_services.dart';
 import 'services/facebook_service.dart';
+import 'services/analytics_service.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'photo_manager.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:archive/archive_io.dart';
@@ -64,10 +68,26 @@ class PartCategoryStorage {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (!kIsWeb) {
+    await Firebase.initializeApp();
+
+    // Pass all uncaught Flutter errors to Crashlytics.
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+    // Pass all uncaught async errors to Crashlytics.
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    await AnalyticsService.logAppOpen();
+    await FacebookService.init();
+  }
+
   await billing.init();
   await MigrationService.runIfNeeded();
   if (kDebugMode) await _loadDebugProFlag();
-  if (!kIsWeb) await FacebookService.init();
   runApp(const WreckLogApp());
 }
 

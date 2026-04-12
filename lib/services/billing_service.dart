@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'facebook_service.dart';
+import 'analytics_service.dart';
 
 class BillingService extends ChangeNotifier {
   // ── Product IDs ────────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ class BillingService extends ChangeNotifier {
     if (!isAvailable || monthlyProduct == null) {
       throw Exception('Monthly subscription not available. Please check your connection and try again.');
     }
+    await AnalyticsService.logSubscriptionStarted(kMonthlyId);
     final param = PurchaseParam(productDetails: monthlyProduct!);
     await _iap.buyNonConsumable(purchaseParam: param);
   }
@@ -94,6 +96,7 @@ class BillingService extends ChangeNotifier {
     if (!isAvailable || yearlyProduct == null) {
       throw Exception('Yearly subscription not available. Please check your connection and try again.');
     }
+    await AnalyticsService.logSubscriptionStarted(kYearlyId);
     final param = PurchaseParam(productDetails: yearlyProduct!);
     await _iap.buyNonConsumable(purchaseParam: param);
   }
@@ -174,6 +177,11 @@ class BillingService extends ChangeNotifier {
                       : null;
               if (product != null) {
                 await FacebookService.logPurchase(
+                  product.rawPrice,
+                  product.currencyCode,
+                );
+                await AnalyticsService.logSubscriptionCompleted(
+                  p.productID,
                   product.rawPrice,
                   product.currencyCode,
                 );
