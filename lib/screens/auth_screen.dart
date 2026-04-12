@@ -36,8 +36,20 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       if (_isLogin) {
         await auth.signIn(_emailCtrl.text.trim(), _passwordCtrl.text);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Welcome back!')),
+          );
+          Navigator.of(context).pop();
+        }
       } else {
         await auth.register(_emailCtrl.text.trim(), _passwordCtrl.text);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Account created! Your data will now sync across devices.')),
+          );
+          Navigator.of(context).pop();
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _error = AuthService.friendlyError(e));
