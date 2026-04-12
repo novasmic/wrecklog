@@ -22,6 +22,7 @@ import 'landing_screen.dart';
 import 'app_services.dart';
 import 'services/facebook_service.dart';
 import 'services/analytics_service.dart';
+import 'services/firestore_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'photo_manager.dart';
@@ -260,12 +261,23 @@ class _AppShellState extends State<AppShell> {
       _vehicles = v;
       _loading = false;
     });
+    // Migrate local data to Firestore on first signed-in launch.
+    _maybeMigrateToFirestore(v);
     // Only redirect to landing on cold start — not when coming from LandingScreen
     if (v.isEmpty && mounted && !widget.allowEmpty) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const LandingScreen()),
       );
     }
+  }
+
+  Future<void> _maybeMigrateToFirestore(List<Vehicle> vehicles) async {
+    final uid = auth.uid;
+    if (uid == null) return; // not signed in — skip
+    final already = await FirestoreService.hasMigrated(uid);
+    if (already) return;
+    final json = vehicles.map((v) => v.toJson()).toList();
+    await FirestoreService.migrateLocalData(uid, json);
   }
 
   // Debounced save — batches rapid successive changes (e.g. adding many parts)
@@ -295,11 +307,21 @@ class _AppShellState extends State<AppShell> {
       _vehicles = _vehicles.map((x) => x.id == updated.id ? updated : x).toList();
     });
     await _persist();
+    if (auth.uid != null) {
+      FirestoreService.upsertVehicle(auth.uid!, updated.toJson());
+      for (final p in updated.parts) {
+        FirestoreService.upsertPart(auth.uid!, updated.id, p.toJson());
+      }
+    }
   }
 
   Future<void> _addVehicle(Vehicle created) async {
     setState(() => _vehicles = [created, ..._vehicles]);
     await _persist();
+    if (auth.uid != null) {
+      FirestoreService.upsertVehicle(auth.uid!, created.toJson());
+    }
+    AnalyticsService.logVehicleCreated(created.make, created.model, created.year);
   }
 
   Future<void> _deleteVehicle(String id) async {
@@ -313,6 +335,7 @@ class _AppShellState extends State<AppShell> {
       }
       setState(() => _vehicles.removeWhere((x) => x.id == id));
       await _persist();
+      if (auth.uid != null) FirestoreService.deleteVehicle(auth.uid!, id);
       // Last vehicle deleted → go back to landing immediately
       if (_vehicles.isEmpty && mounted) {
         Navigator.of(context).pushReplacement(
@@ -3840,6 +3863,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     setState(() {
       _v.parts.insertAll(0, created);
     });
+    for (final p in created) {
+      if (auth.uid != null) FirestoreService.upsertPart(auth.uid!, _v.id, p.toJson());
+      AnalyticsService.logPartAdded(p.name, p.category, p.vehicleMake, p.vehicleModel);
+    }
   }
 
   void _saveAndExit() => Navigator.of(context).pop(_v);
@@ -3871,6 +3898,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     await PhotoStorage.deleteAllForOwner('part', p.id);
     if (!mounted) return;
     setState(() => _v.parts.removeWhere((x) => x.id == p.id));
+    if (auth.uid != null) FirestoreService.deletePart(auth.uid!, _v.id, p.id);
   }
 
   Future<void> _editPart(Part p) async {
@@ -4904,6 +4932,10 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
       _part.dateSold ??= DateTime.now();
       for (final l in _part.listings) { l.isLive = false; }
     });
+    AnalyticsService.logPartSold(_part.name, _part.salePriceCents, _part.category);
+    if (auth.uid != null && _part.vehicleId != null) {
+      FirestoreService.upsertPart(auth.uid!, _part.vehicleId!, _part.toJson());
+    }
     widget.onPartEdited?.call(_part);
     if (mounted) Navigator.of(context).pop(_part);
   }
