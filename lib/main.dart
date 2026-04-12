@@ -8700,12 +8700,42 @@ class _SettingsTabState extends State<SettingsTab> {
                                   ],
                                 ),
                               ),
-                              TextButton(
-                                onPressed: () async {
-                                  await auth.signOut();
-                                  if (context.mounted) setState(() {});
-                                },
-                                child: const Text('Sign Out', style: TextStyle(color: Colors.white38)),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  TextButton(
+                                    onPressed: () async {
+                                      await auth.signOut();
+                                      if (context.mounted) setState(() {});
+                                    },
+                                    child: const Text('Sign Out', style: TextStyle(color: Colors.white38)),
+                                  ),
+                                  TextButton(
+                                    onPressed: () async {
+                                      final ok = await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text('Delete account?'),
+                                          content: const Text(
+                                            'This permanently deletes your WreckLog account and all synced data from our servers. Your local data on this device is not affected.',
+                                          ),
+                                          actions: [
+                                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                            FilledButton(
+                                              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                                              onPressed: () => Navigator.pop(ctx, true),
+                                              child: const Text('Delete Account'),
+                                            ),
+                                          ],
+                                        ),
+                                      ) ?? false;
+                                      if (!ok || !context.mounted) return;
+                                      await auth.deleteAccount();
+                                      if (context.mounted) setState(() {});
+                                    },
+                                    child: const Text('Delete Account', style: TextStyle(color: Colors.red, fontSize: 12)),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

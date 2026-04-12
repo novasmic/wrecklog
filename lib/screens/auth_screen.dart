@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../app_services.dart';
 import '../services/auth_service.dart';
 
@@ -98,6 +99,24 @@ class _AuthScreenState extends State<AuthScreen> {
                         color: scheme.onSurface.withValues(alpha:0.6),
                       ),
                     ),
+                    if (!_isLogin) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          'Your account syncs your vehicles and parts across devices. Your data is private and only accessible to you.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurface.withValues(alpha: 0.7),
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 36),
 
                     // Email
@@ -228,6 +247,42 @@ class _AuthScreenState extends State<AuthScreen> {
                       child: Text(
                         'Skip for now',
                         style: TextStyle(color: scheme.onSurface.withValues(alpha:0.4), fontSize: 13),
+                      ),
+                    ),
+
+                    // Privacy Policy + Terms
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        children: [
+                          Text(
+                            'By signing up you agree to our ',
+                            style: TextStyle(fontSize: 11, color: scheme.onSurface.withValues(alpha: 0.4)),
+                          ),
+                          GestureDetector(
+                            onTap: () => launchUrl(Uri.parse('https://novasmic.com.au/privacy/')),
+                            child: Text(
+                              'Privacy Policy',
+                              style: TextStyle(fontSize: 11, color: scheme.primary, decoration: TextDecoration.underline),
+                            ),
+                          ),
+                          Text(
+                            ' and ',
+                            style: TextStyle(fontSize: 11, color: scheme.onSurface.withValues(alpha: 0.4)),
+                          ),
+                          GestureDetector(
+                            onTap: () => launchUrl(Uri.parse('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')),
+                            child: Text(
+                              'Terms of Use',
+                              style: TextStyle(fontSize: 11, color: scheme.primary, decoration: TextDecoration.underline),
+                            ),
+                          ),
+                          Text(
+                            '.',
+                            style: TextStyle(fontSize: 11, color: scheme.onSurface.withValues(alpha: 0.4)),
+                          ),
+                        ],
                       ),
                     ),
                   ],

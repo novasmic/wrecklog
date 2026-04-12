@@ -43,6 +43,10 @@ class AuthService extends ChangeNotifier {
     await _auth.sendPasswordResetEmail(email: email);
   }
 
+  Future<void> deleteAccount() async {
+    await currentUser?.delete();
+  }
+
   /// Human-readable message from FirebaseAuthException codes.
   static String friendlyError(Object e) {
     if (e is FirebaseAuthException) {
