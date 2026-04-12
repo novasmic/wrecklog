@@ -45,3 +45,7 @@ app.*.map.json
 /android/app/release
 upload-keystore.jks
 android/key.properties
+
+# Firebase config — contain API keys, must not be committed
+google-services.json
+GoogleService-Info.plist
