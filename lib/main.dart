@@ -72,19 +72,25 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (!kIsWeb) {
-    await Firebase.initializeApp();
+    try {
+      await Firebase.initializeApp()
+          .timeout(const Duration(seconds: 5));
 
-    // Pass all uncaught Flutter errors to Crashlytics.
-    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      // Pass all uncaught Flutter errors to Crashlytics.
+      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-    // Pass all uncaught async errors to Crashlytics.
-    PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
+      // Pass all uncaught async errors to Crashlytics.
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
 
-    await AnalyticsService.logAppOpen();
-    await FacebookService.init();
+      AnalyticsService.logAppOpen();
+      FacebookService.init();
+    } catch (e) {
+      // Firebase failed to init — app continues without it.
+      if (kDebugMode) debugPrint('Firebase init failed: $e');
+    }
   }
 
   await billing.init();
