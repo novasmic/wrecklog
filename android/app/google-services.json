@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "595497739352",
+    "project_id": "wrecklog-caa4b",
+    "storage_bucket": "wrecklog-caa4b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:595497739352:android:6f91290abda0e9f95d562d",
+        "android_client_info": {
+          "package_name": "au.com.novasmic.wrecklog"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBL_S_k252IXuUFuf6dVovfXnnnUesDB28"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
