@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'facebook_service.dart';
 
 class BillingService extends ChangeNotifier {
   // ── Product IDs ────────────────────────────────────────────────────────────
@@ -163,6 +164,20 @@ class BillingService extends ChangeNotifier {
             if (_restoreInProgress) {
               _sawAnyCallback = true;
               _foundActive = true;
+            }
+            // Log purchase event to Facebook (new purchases only, not restores).
+            if (p.status == PurchaseStatus.purchased) {
+              final product = p.productID == kMonthlyId
+                  ? monthlyProduct
+                  : p.productID == kYearlyId
+                      ? yearlyProduct
+                      : null;
+              if (product != null) {
+                await FacebookService.logPurchase(
+                  product.rawPrice,
+                  product.currencyCode,
+                );
+              }
             }
             await _grantPro();
           } else {

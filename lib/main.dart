@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'landing_screen.dart';
 import 'app_services.dart';
+import 'services/facebook_service.dart';
 import 'photo_manager.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:archive/archive_io.dart';
@@ -66,6 +67,7 @@ Future<void> main() async {
   await billing.init();
   await MigrationService.runIfNeeded();
   if (kDebugMode) await _loadDebugProFlag();
+  if (!kIsWeb) await FacebookService.init();
   runApp(const WreckLogApp());
 }
 

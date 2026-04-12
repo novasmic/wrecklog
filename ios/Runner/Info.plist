@@ -54,6 +54,17 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>mailto</string>
+		<string>fbapi</string>
+		<string>fbauth2</string>
+		<string>fb-messenger-share-api</string>
 	</array>
+	<key>FacebookAppID</key>
+	<string>1396083102554834</string>
+	<key>FacebookClientToken</key>
+	<string>2b85fdad65245fa6063933f79ad09582</string>
+	<key>FacebookDisplayName</key>
+	<string>WreckLog</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>WreckLog uses this to show you more relevant ads and improve your experience.</string>
 </dict>
 </plist>
