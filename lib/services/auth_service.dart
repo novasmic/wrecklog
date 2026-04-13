@@ -3,14 +3,22 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 class AuthService extends ChangeNotifier {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  FirebaseAuth? _authInstance;
+  FirebaseAuth get _auth {
+    try {
+      _authInstance ??= FirebaseAuth.instance;
+    } catch (_) {}
+    return _authInstance ?? FirebaseAuth.instance;
+  }
 
-  User? get currentUser => _auth.currentUser;
+  User? get currentUser { try { return _auth.currentUser; } catch (_) { return null; } }
   bool get isSignedIn => currentUser != null;
   String? get uid => currentUser?.uid;
 
   AuthService() {
-    _auth.authStateChanges().listen((_) => notifyListeners());
+    try {
+      _auth.authStateChanges().listen((_) => notifyListeners());
+    } catch (_) {}
   }
 
   Future<void> _ensureFirebase() async {
