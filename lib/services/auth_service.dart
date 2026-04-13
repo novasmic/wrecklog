@@ -44,14 +44,17 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await _ensureFirebase();
     await _auth.signOut();
   }
 
   Future<void> sendPasswordReset(String email) async {
+    await _ensureFirebase();
     await _auth.sendPasswordResetEmail(email: email);
   }
 
   Future<void> deleteAccount() async {
+    await _ensureFirebase();
     await currentUser?.delete();
   }
 
