@@ -2,7 +2,7 @@ name: wrecklog
 description: A simple vehicle dismantling and parts tracking app.
 publish_to: "none"
 
-version: 1.9.1+75
+version: 1.9.2+82
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -27,6 +27,8 @@ dependencies:
   firebase_core: ^3.0.0
   firebase_crashlytics: ^4.0.0
   firebase_analytics: ^11.0.0
+  firebase_auth: ^5.0.0
+  cloud_firestore: ^5.0.0
   web: ^1.0.0
   drift: ^2.20.0
   sqlite3_flutter_libs: ^0.5.0

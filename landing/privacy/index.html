@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — WreckLog</title>
+  <meta name="description" content="WreckLog Privacy Policy" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --orange: #E07B2A;
+      --orange-light: #F28C3A;
+      --bg: #0F1318;
+      --bg2: #161B22;
+      --bg3: #1C2330;
+      --border: #2A3140;
+      --text: #F0F2F5;
+      --muted: #8B95A3;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(15, 19, 24, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 20px;
+      letter-spacing: -0.3px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .nav-logo span { color: var(--orange); }
+
+    .nav-cta {
+      background: var(--orange);
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 8px 18px;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+
+    .nav-cta:hover { background: var(--orange-light); }
+
+    /* ── CONTENT ── */
+    .content {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 60px 24px 80px;
+    }
+
+    .content h1 {
+      font-size: clamp(28px, 5vw, 40px);
+      font-weight: 900;
+      letter-spacing: -0.8px;
+      margin-bottom: 8px;
+    }
+
+    .last-updated {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 48px;
+    }
+
+    .section {
+      margin-bottom: 40px;
+    }
+
+    .section h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--orange);
+      margin-bottom: 12px;
+    }
+
+    .section p {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.75;
+      margin-bottom: 12px;
+    }
+
+    .section ul {
+      list-style: none;
+      margin-bottom: 12px;
+    }
+
+    .section ul li {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.75;
+      padding-left: 16px;
+      position: relative;
+    }
+
+    .section ul li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: var(--orange);
+    }
+
+    .section a {
+      color: var(--orange);
+      text-decoration: none;
+    }
+
+    .section a:hover { text-decoration: underline; }
+
+    /* ── FOOTER ── */
+    footer {
+      text-align: center;
+      padding: 32px 24px;
+      font-size: 13px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--orange); }
+    .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <a class="nav-logo" href="https://wrecklog.com.au/">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="7" fill="#E07B2A"/>
+        <path d="M7 20L11 8H14L17 16L19 12H22" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Wreck<span>Log</span>
+    </a>
+    <a class="nav-cta" href="https://apps.apple.com/app/id6760394444">Download Free</a>
+  </nav>
+
+  <!-- CONTENT -->
+  <div class="content">
+    <h1>Privacy Policy</h1>
+    <p class="last-updated">Last updated: April 2026</p>
+
+    <div class="section">
+      <p>This Privacy Policy describes how NovaSmic Pty Ltd ("we", "us", or "our") collects, uses, and stores information when you use the WreckLog mobile application ("the App").</p>
+    </div>
+
+    <div class="section">
+      <h2>1. Information We Collect</h2>
+      <p><strong style="color: var(--text);">Account Information</strong></p>
+      <ul>
+        <li>Email address (if you create an account)</li>
+        <li>Authentication details via Firebase Authentication</li>
+      </ul>
+      <p><strong style="color: var(--text);">App Data</strong></p>
+      <ul>
+        <li>Vehicles, parts, listings, pricing, and related data you enter into the App</li>
+      </ul>
+      <p>This data may be stored locally on your device and, if you choose to sign in, securely synced to cloud servers.</p>
+    </div>
+
+    <div class="section">
+      <h2>2. How Your Data Is Stored</h2>
+      <p>WreckLog uses a combination of:</p>
+      <ul>
+        <li>Local storage (on your device)</li>
+        <li>Cloud storage via Firebase (Google Cloud services)</li>
+      </ul>
+      <p>When signed in, your data is securely stored in Firestore and associated with your user account.</p>
+      <p>We implement access controls to ensure that users can only access their own data.</p>
+    </div>
+
+    <div class="section">
+      <h2>3. Analytics</h2>
+      <p>WreckLog uses Firebase Analytics to collect anonymous usage data, including:</p>
+      <ul>
+        <li>App interactions (e.g. parts added, vehicles created)</li>
+        <li>Feature usage</li>
+        <li>General app performance data</li>
+      </ul>
+      <p>This information is used to improve the App and does not identify you personally.</p>
+    </div>
+
+    <div class="section">
+      <h2>4. In-App Purchases</h2>
+      <p>WreckLog offers optional in-app purchases (subscriptions) through:</p>
+      <ul>
+        <li>Google Play Billing</li>
+        <li>Apple App Store (where applicable)</li>
+      </ul>
+      <p>All payment processing is handled by Google or Apple. We do not receive or store your payment details.</p>
+      <p>For more information:</p>
+      <ul>
+        <li><a href="https://policies.google.com/privacy">Google Privacy Policy</a></li>
+        <li><a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a></li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>5. Data Control</h2>
+      <p>You have full control over your data:</p>
+      <ul>
+        <li>You may use the App without creating an account</li>
+        <li>Signing in enables cloud backup and sync</li>
+        <li>You may delete your data from the App at any time</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>6. Data Security</h2>
+      <p>We take reasonable steps to protect your data using secure cloud infrastructure provided by Google Firebase.</p>
+      <p>However, no method of transmission or storage is completely secure.</p>
+    </div>
+
+    <div class="section">
+      <h2>7. Ads</h2>
+      <p>WreckLog does not display third-party advertisements.</p>
+    </div>
+
+    <div class="section">
+      <h2>8. Children's Privacy</h2>
+      <p>WreckLog is not intended for children under 18 years of age. We do not knowingly collect personal information from children.</p>
+    </div>
+
+    <div class="section">
+      <h2>9. Changes to This Policy</h2>
+      <p>We may update this Privacy Policy from time to time. Updates will be reflected by changing the "Last updated" date above.</p>
+    </div>
+
+    <div class="section">
+      <h2>10. Contact</h2>
+      <p>If you have any questions about this Privacy Policy, please contact:</p>
+      <ul>
+        <li>NovaSmic Pty Ltd</li>
+        <li>Email: <a href="mailto:wrecklog.app@gmail.com">wrecklog.app@gmail.com</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-links">
+      <a href="https://wrecklog.com.au/privacy/">Privacy Policy</a>
+      <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/">Terms of Use</a>
+      <a href="mailto:wrecklog.app@gmail.com">Contact</a>
+    </div>
+    <p>&copy; 2026 WreckLog. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>
