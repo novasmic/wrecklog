@@ -22,15 +22,8 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> _ensureFirebase() async {
-    try {
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp()
-            .timeout(const Duration(seconds: 10));
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('AuthService: Firebase init error: $e');
-      rethrow;
-    }
+    if (Firebase.apps.isNotEmpty) return;
+    await Firebase.initializeApp().timeout(const Duration(seconds: 10));
   }
 
   Future<void> signIn(String email, String password) async {
@@ -70,10 +63,9 @@ class AuthService extends ChangeNotifier {
         case 'network-request-failed': return 'No internet connection.';
         case 'too-many-requests':    return 'Too many attempts. Please try again later.';
         default:
-          if (kDebugMode) debugPrint('FirebaseAuthException: ${e.code} — ${e.message}');
-          return 'Something went wrong. Please try again.';
+          return 'Error: ${e.code}. Please try again.';
       }
     }
-    return 'Something went wrong. Please try again.';
+    return 'Error: $e';
   }
 }
