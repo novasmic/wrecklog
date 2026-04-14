@@ -26,6 +26,7 @@ import 'services/analytics_service.dart';
 import 'services/firestore_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'firebase_options.dart';
 import 'photo_manager.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:archive/archive_io.dart';
@@ -73,8 +74,9 @@ Future<void> main() async {
 
   if (!kIsWeb) {
     try {
-      await Firebase.initializeApp()
-          .timeout(const Duration(seconds: 5));
+      await Firebase.initializeApp(
+            options: DefaultFirebaseOptions.currentPlatform,
+          ).timeout(const Duration(seconds: 5));
 
       // Pass all uncaught Flutter errors to Crashlytics.
       FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
