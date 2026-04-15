@@ -437,7 +437,7 @@ class _FullscreenViewerState extends State<_FullscreenViewer> {
             );
           }
           return PhotoViewGalleryPageOptions(
-            imageProvider: provider,
+            imageProvider: ResizeImage(provider, width: 1920),
             minScale: PhotoViewComputedScale.contained,
             maxScale: PhotoViewComputedScale.covered * 3,
             errorBuilder: (_, __, ___) => const Center(

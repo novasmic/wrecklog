@@ -79,11 +79,18 @@ Future<void> main() async {
           ).timeout(const Duration(seconds: 5));
 
       // Pass all uncaught Flutter errors to Crashlytics.
-      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      // Image OOM errors are non-fatal — log but don't count as crashes.
+      FlutterError.onError = (details) {
+        final msg = details.exceptionAsString();
+        final isImageOom = msg.contains('Could not allocate') || msg.contains('image decompression');
+        FirebaseCrashlytics.instance.recordFlutterError(details, fatal: !isImageOom);
+      };
 
       // Pass all uncaught async errors to Crashlytics.
       PlatformDispatcher.instance.onError = (error, stack) {
-        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        final msg = error.toString();
+        final isImageOom = msg.contains('Could not allocate') || msg.contains('image decompression');
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: !isImageOom);
         return true;
       };
 
