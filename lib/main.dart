@@ -1350,6 +1350,7 @@ Future<void> showRatingDialog(BuildContext context) async {
 }
 
 Future<void> showProPaywall(BuildContext context, {required String title, required String message}) async {
+  AnalyticsService.logUpgradeViewed();
   await showDialog<void>(
     context: context,
     barrierDismissible: true,
