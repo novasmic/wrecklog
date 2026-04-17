@@ -110,4 +110,15 @@ class AnalyticsService {
       if (kDebugMode) debugPrint('Analytics logUpgradeViewed error: $e');
     }
   }
+
+  static Future<void> logUserRating(int stars) async {
+    try {
+      await _analytics.logEvent(
+        name: 'user_rating',
+        parameters: {'stars': stars},
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('Analytics logUserRating error: $e');
+    }
+  }
 }

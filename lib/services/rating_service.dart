@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_services.dart';
+import 'analytics_service.dart';
 
 class RatingService {
   static const _kHasRated = 'has_rated_v1';
@@ -25,6 +26,7 @@ class RatingService {
         'platform': defaultTargetPlatform.name,
         'createdAt': FieldValue.serverTimestamp(),
       });
+      if (stars > 0) await AnalyticsService.logUserRating(stars);
     } catch (e) {
       if (kDebugMode) debugPrint('RatingService.submitRating error: $e');
     }
