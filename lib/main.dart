@@ -24,6 +24,7 @@ import 'screens/auth_screen.dart';
 import 'services/facebook_service.dart';
 import 'services/analytics_service.dart';
 import 'services/firestore_service.dart';
+import 'services/rating_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'firebase_options.dart';
@@ -1246,6 +1247,66 @@ Future<void> _saveDebugProFlag(bool value) async {
   await prefs.setBool(_kDebugProKey, value);
 }
 
+Future<void> showRatingDialog(BuildContext context) async {
+  if (await RatingService.hasRated()) return;
+  if (!context.mounted) return;
+  int selected = 0;
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => AlertDialog(
+        backgroundColor: const Color(0xFF161B22),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('How are you finding WreckLog?', textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Tap a star to rate your experience.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: Colors.white54)),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(5, (i) => GestureDetector(
+                onTap: () => setState(() => selected = i + 1),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Icon(
+                    i < selected ? Icons.star_rounded : Icons.star_outline_rounded,
+                    size: 40,
+                    color: i < selected ? const Color(0xFFE07B2A) : Colors.white24,
+                  ),
+                ),
+              )),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              RatingService.submitRating(0);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Skip', style: TextStyle(color: Colors.white38)),
+          ),
+          FilledButton(
+            onPressed: selected == 0 ? null : () {
+              RatingService.submitRating(selected);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Thanks for your feedback!')),
+              );
+            },
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 Future<void> showProPaywall(BuildContext context, {required String title, required String message}) async {
   await showDialog<void>(
     context: context,
@@ -2076,6 +2137,8 @@ class _VehiclesHomeState extends State<VehiclesHome> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           if (!isPro && vehicles.length >= kFreeVehicleLimit) {
+            await showRatingDialog(context);
+            if (!context.mounted) return;
             await showProPaywall(
               context,
               title: 'Free limit reached',
@@ -3865,6 +3928,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
 
   Future<void> _addPart() async {
     if (!isPro && _v.parts.length >= kFreePartLimitPerVehicle) {
+      await showRatingDialog(context);
+      if (!mounted) return;
       await showProPaywall(
         context,
         title: 'Free parts limit reached',
