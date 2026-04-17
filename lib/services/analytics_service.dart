@@ -111,6 +111,14 @@ class AnalyticsService {
     }
   }
 
+  static Future<void> logEvent(String name, {Map<String, Object>? parameters}) async {
+    try {
+      await _analytics.logEvent(name: name, parameters: parameters);
+    } catch (e) {
+      if (kDebugMode) debugPrint('Analytics logEvent error: $e');
+    }
+  }
+
   static Future<void> logUserRating(int stars) async {
     try {
       await _analytics.logEvent(

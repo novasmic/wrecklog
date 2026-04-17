@@ -1247,6 +1247,46 @@ Future<void> _saveDebugProFlag(bool value) async {
   await prefs.setBool(_kDebugProKey, value);
 }
 
+const String _kFirstSalePromptShown = 'first_sale_prompt_shown';
+
+Future<void> maybeShowFirstSalePrompt(BuildContext context) async {
+  if (isPro) return;
+  final prefs = await SharedPreferences.getInstance();
+  if (prefs.getBool(_kFirstSalePromptShown) ?? false) return;
+  await prefs.setBool(_kFirstSalePromptShown, true);
+  AnalyticsService.logEvent('first_sale_upgrade_prompt');
+  if (!context.mounted) return;
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF161B22),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('You just made money with WreckLog 🎉',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+      content: const Text(
+        'Unlock unlimited parts and vehicles to keep going.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 14, color: Colors.white60),
+      ),
+      actionsAlignment: MainAxisAlignment.center,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Maybe Later', style: TextStyle(color: Colors.white38)),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(ctx);
+            if (context.mounted) showProPaywall(context, title: 'Upgrade to Pro', message: 'Unlock unlimited vehicles and parts.');
+          },
+          child: const Text('Upgrade'),
+        ),
+      ],
+    ),
+  );
+}
+
 Future<void> showRatingDialog(BuildContext context) async {
   if (await RatingService.hasRated()) return;
   if (!context.mounted) return;
@@ -2210,6 +2250,30 @@ class _VehiclesHomeState extends State<VehiclesHome> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    if (vehicles.length >= kFreeVehicleLimit)
+                      GestureDetector(
+                        onTap: () => showProPaywall(context, title: 'Upgrade to Pro', message: 'Unlock unlimited vehicles and parts.'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE07B2A).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE07B2A).withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.info_outline, size: 14, color: Color(0xFFE07B2A)),
+                              SizedBox(width: 8),
+                              Expanded(child: Text(
+                                'Vehicle limit reached. Upgrade for unlimited.',
+                                style: TextStyle(fontSize: 12, color: Color(0xFFE07B2A)),
+                              )),
+                              Icon(Icons.chevron_right, size: 14, color: Color(0xFFE07B2A)),
+                            ],
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 12),
                   ],
                   // ── Search + sort bar ─────────────────────────────────
@@ -4660,6 +4724,40 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
           ListView(
             padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 96),
             children: [
+              // ── Free tier warning banner ─────────────────────────────────
+          if (!isPro) ...[
+            Builder(builder: (ctx) {
+              final partsLeft = kFreePartLimitPerVehicle - _v.parts.length;
+              if (partsLeft > 1) return const SizedBox.shrink();
+              final msg = partsLeft == 1
+                  ? '1 part slot remaining on free plan.'
+                  : 'Free part limit reached.';
+              return GestureDetector(
+                onTap: () => showProPaywall(context, title: 'Upgrade to Pro', message: 'Unlock unlimited vehicles and parts.'),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE07B2A).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE07B2A).withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, size: 14, color: Color(0xFFE07B2A)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(
+                        '$msg Upgrade for unlimited.',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFFE07B2A)),
+                      )),
+                      const Icon(Icons.chevron_right, size: 14, color: Color(0xFFE07B2A)),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+
               // ── Vehicle info line ────────────────────────────────────────
           if (infoLine.isNotEmpty) ...[
             Text(
@@ -5021,6 +5119,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     }
     widget.onPartEdited?.call(_part);
     if (mounted) Navigator.of(context).pop(_part);
+    if (mounted) await maybeShowFirstSalePrompt(context);
   }
 
   @override
