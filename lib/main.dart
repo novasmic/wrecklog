@@ -1295,9 +1295,11 @@ Future<void> showRatingDialog(BuildContext context) async {
             onPressed: selected == 0 ? null : () {
               RatingService.submitRating(selected);
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Thanks for your feedback!')),
-              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Thanks for your feedback!')),
+                );
+              }
             },
             child: const Text('Submit'),
           ),
