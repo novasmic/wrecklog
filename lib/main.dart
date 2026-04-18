@@ -5133,8 +5133,8 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
       FirestoreService.upsertPart(auth.uid!, _part.vehicleId!, _part.toJson());
     }
     widget.onPartEdited?.call(_part);
-    if (mounted) Navigator.of(context).pop(_part);
     if (mounted) await maybeShowFirstSalePrompt(context);
+    if (mounted) Navigator.of(context).pop(_part);
   }
 
   @override
@@ -6764,7 +6764,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
       context: context,
       builder: (_) => const AddListingDialog(),
     );
-    if (created == null) return;
+    if (created == null || !mounted) return;
 
     setState(() {
       _p.listings.insert(0, created);
