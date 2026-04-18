@@ -5075,6 +5075,20 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     if (mounted) Navigator.of(context).pop(updated);
   }
 
+  Future<void> _addListing() async {
+    final created = await showDialog<Listing>(
+      context: context,
+      builder: (_) => const AddListingDialog(),
+    );
+    if (created == null || !mounted) return;
+    setState(() {
+      _part.listings.insert(0, created);
+      normalizePartStateFromListings(_part);
+    });
+    widget.onPartEdited?.call(_part);
+    AnalyticsService.logListingAdded(created.platform);
+  }
+
   Future<void> _markSold() async {
     if (_part.state == PartState.sold || _part.state == PartState.scrapped) return;
     final ctrl = TextEditingController(
@@ -5148,13 +5162,29 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
           const SizedBox(width: 4),
         ],
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: canMarkSold
-          ? FloatingActionButton.extended(
-              heroTag: 'fab_mark_sold',
-              onPressed: _markSold,
-              backgroundColor: Colors.green,
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('Mark Sold'),
+          ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  FloatingActionButton.extended(
+                    heroTag: 'fab_add_listing',
+                    onPressed: _addListing,
+                    backgroundColor: const Color(0xFFE07B2A),
+                    icon: const Icon(Icons.link),
+                    label: const Text('Add Listing'),
+                  ),
+                  FloatingActionButton.extended(
+                    heroTag: 'fab_mark_sold',
+                    onPressed: _markSold,
+                    backgroundColor: Colors.green,
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Mark Sold'),
+                  ),
+                ],
+              ),
             )
           : null,
       body: ListView(
