@@ -5148,6 +5148,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     final colorStr = (vehicle?.color ?? '').trim().isEmpty ? null : vehicle!.color;
 
     final canMarkSold = part.state != PartState.sold && part.state != PartState.scrapped;
+    final canAddListing = part.listings.isEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -5164,28 +5165,36 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: canMarkSold
-          ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  FloatingActionButton.extended(
-                    heroTag: 'fab_add_listing',
-                    onPressed: _addListing,
-                    backgroundColor: const Color(0xFFE07B2A),
-                    icon: const Icon(Icons.link),
-                    label: const Text('Add Listing'),
+          ? (canAddListing
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      FloatingActionButton.extended(
+                        heroTag: 'fab_add_listing',
+                        onPressed: _addListing,
+                        backgroundColor: const Color(0xFFE07B2A),
+                        icon: const Icon(Icons.link),
+                        label: const Text('Add Listing'),
+                      ),
+                      FloatingActionButton.extended(
+                        heroTag: 'fab_mark_sold',
+                        onPressed: _markSold,
+                        backgroundColor: Colors.green,
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: const Text('Mark Sold'),
+                      ),
+                    ],
                   ),
-                  FloatingActionButton.extended(
-                    heroTag: 'fab_mark_sold',
-                    onPressed: _markSold,
-                    backgroundColor: Colors.green,
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('Mark Sold'),
-                  ),
-                ],
-              ),
-            )
+                )
+              : FloatingActionButton.extended(
+                  heroTag: 'fab_mark_sold',
+                  onPressed: _markSold,
+                  backgroundColor: Colors.green,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Mark Sold'),
+                ))
           : null,
       body: ListView(
         padding: const EdgeInsets.all(kPad),
