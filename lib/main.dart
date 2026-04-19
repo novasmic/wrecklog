@@ -1280,12 +1280,12 @@ Future<void> maybeShowFirstPartPrompt(BuildContext context) async {
       backgroundColor: const Color(0xFF161B22),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Text(
-        "You're now tracking parts 🔧",
+        "Nice — you're tracking parts 🔧",
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
       ),
       content: const Text(
-        'When it sells, mark it sold and WreckLog will track your profit.\n\nAdd a listing link so buyers can find it.',
+        'Add more parts as you dismantle.\n\nTrack what they sell for and WreckLog will show you exactly how much this vehicle has made.',
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 14, color: Colors.white60, height: 1.5),
       ),
