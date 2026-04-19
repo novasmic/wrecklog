@@ -1306,7 +1306,7 @@ Future<void> maybeShowFirstSalePrompt(BuildContext context, {int? saleCents}) as
   final prefs = await SharedPreferences.getInstance();
   if (prefs.getBool(_kFirstSalePromptShown) ?? false) return;
   await prefs.setBool(_kFirstSalePromptShown, true);
-  AnalyticsService.logEvent('first_sale_upgrade_prompt');
+  AnalyticsService.logEvent('first_sale');
   if (!context.mounted) return;
   final amountStr = (saleCents != null && saleCents > 0)
       ? formatMoneyFromCents(saleCents)
