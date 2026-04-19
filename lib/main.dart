@@ -3362,88 +3362,63 @@ class AddVehicleScreen extends StatefulWidget {
 }
 
 class _AddVehicleScreenState extends State<AddVehicleScreen> {
-  final _formKey = GlobalKey<FormState>();
-
   final _makeCtrl = TextEditingController();
   final _modelCtrl = TextEditingController();
-  final _yearCtrl = TextEditingController(text: DateTime.now().year.toString());
-  final _purchaseCtrl = TextEditingController();
-  final _idCtrl = TextEditingController();
-  final _colorCtrl = TextEditingController();
-  final _usageCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  final _trimCtrl = TextEditingController();
-  final _engineCtrl = TextEditingController();
-  final _transmissionCtrl = TextEditingController();
-  final _drivetrainCtrl = TextEditingController();
 
-  ItemType _itemType = ItemType.car;
-  DateTime _acquiredAt = DateTime.now();
-  String _usageUnit = 'km';
-  String _makeValue = ''; // mirrors _makeCtrl; drives model suggestions
+  String _makeValue = '';
+  int _selectedYear = DateTime.now().year;
+  bool _showEarlierYears = false;
+
+  static const ItemType _itemType = ItemType.car;
 
   @override
   void dispose() {
     _makeCtrl.dispose();
     _modelCtrl.dispose();
-    _yearCtrl.dispose();
-    _purchaseCtrl.dispose();
-    _idCtrl.dispose();
-    _colorCtrl.dispose();
-    _usageCtrl.dispose();
-    _notesCtrl.dispose();
-    _trimCtrl.dispose();
-    _engineCtrl.dispose();
-    _transmissionCtrl.dispose();
-    _drivetrainCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(now.year + 1),
-      initialDate: _acquiredAt,
-    );
-    if (picked == null) return;
-    setState(() => _acquiredAt = picked);
-  }
-
-  Future<void> _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-
-    final year = int.tryParse(_yearCtrl.text.trim()) ?? DateTime.now().year;
-    final purchaseCents = parseMoneyToCents(_purchaseCtrl.text);
-    final ident = normalizeIdentifier(_idCtrl.text);
-    final usageValue = int.tryParse(_usageCtrl.text.trim());
-    final notes = _notesCtrl.text.trim();
-
+  void _skip() {
     final v = Vehicle(
       id: newId(),
-      make: _makeCtrl.text.trim(),
-      model: _modelCtrl.text.trim(),
-      year: year,
+      make: '',
+      model: 'My Vehicle',
+      year: DateTime.now().year,
       itemType: _itemType,
       status: VehicleStatus.whole,
-      acquiredAt: _acquiredAt,
-      purchasePriceCents: purchaseCents,
-      identifier: ident.isEmpty ? null : ident,
+      acquiredAt: DateTime.now(),
       parts: [],
-      usageValue: usageValue,
-      usageUnit: _usageUnit,
-      color: _colorCtrl.text.trim(),
-      notes: notes.isEmpty ? null : notes,
-      trim: _trimCtrl.text.trim().isEmpty ? null : _trimCtrl.text.trim(),
-      engine: _engineCtrl.text.trim().isEmpty ? null : _engineCtrl.text.trim(),
-      transmission: _transmissionCtrl.text.trim().isEmpty ? null : _transmissionCtrl.text.trim(),
-      drivetrain: _drivetrainCtrl.text.trim().isEmpty ? null : _drivetrainCtrl.text.trim(),
+      usageUnit: 'km',
+      color: '',
       createdAt: DateTime.now(),
     );
+    Navigator.of(context).pop(v);
+  }
 
-    await RecentModelStorage.add(_itemType, v.make, v.model);
-    if (mounted) Navigator.of(context).pop(v);
+  void _save() {
+    final make = _makeCtrl.text.trim();
+    final model = _modelCtrl.text.trim();
+    if (make.isEmpty || model.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter make and model')),
+      );
+      return;
+    }
+    final v = Vehicle(
+      id: newId(),
+      make: make,
+      model: model,
+      year: _selectedYear,
+      itemType: _itemType,
+      status: VehicleStatus.whole,
+      acquiredAt: DateTime.now(),
+      parts: [],
+      usageUnit: 'km',
+      color: '',
+      createdAt: DateTime.now(),
+    );
+    RecentModelStorage.add(_itemType, v.make, v.model);
+    Navigator.of(context).pop(v);
   }
 
   @override
@@ -3452,196 +3427,132 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
       appBar: AppBar(
         title: const Text('Add Vehicle'),
         actions: [
-          FilledButton(onPressed: _save, child: const Text('Save')),
-          const SizedBox(width: 10),
+          TextButton(
+            onPressed: _skip,
+            child: const Text('Skip', style: TextStyle(color: Colors.white54)),
+          ),
+          const SizedBox(width: 4),
         ],
       ),
-      body: ListView(
+      body: Padding(
         padding: const EdgeInsets.all(kPad),
-        children: [
-          AppCard(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  DropdownButtonFormField<ItemType>(
-                    initialValue: _itemType,
-                    decoration: const InputDecoration(labelText: 'Item type'),
-                    items: ItemType.values.map((t) => DropdownMenuItem(value: t, child: Text(t.label))).toList(),
-                    onChanged: (v) {
-                      setState(() {
-                        _itemType = v ?? ItemType.other;
-                        _makeCtrl.clear();
-                        _modelCtrl.clear();
-                        _makeValue = '';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  _MakeAutocompleteField(
-                    key: ValueKey('make_$_itemType'), // force rebuild on type change
-                    controller: _makeCtrl,
-                    itemType: _itemType,
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                    onMakeChanged: (m) => setState(() {
-                      _makeValue = m;
-                      _modelCtrl.clear();
-                    }),
-                  ),
-                  const SizedBox(height: 10),
-                  _ModelAutocompleteField(
-                    key: ValueKey('model_$_itemType'),
-                    controller: _modelCtrl,
-                    itemType: _itemType,
-                    make: _makeValue,
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _yearCtrl,
-                    decoration: const InputDecoration(labelText: 'Year'),
-                    keyboardType: TextInputType.number,
-                    validator: (v) {
-                      final year = int.tryParse((v ?? '').trim());
-                      if (year == null) return 'Enter a year';
-                      if (year < 1900 || year > DateTime.now().year + 1) return 'Year looks wrong';
-                      return null;
-                    },
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _trimCtrl,
-                    decoration: const InputDecoration(labelText: 'Trim (optional)', hintText: 'e.g. SR5 / Sport / Limited'),
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _engineCtrl,
-                    decoration: const InputDecoration(labelText: 'Engine (optional)', hintText: 'e.g. 2.0L 4cyl / 3.5L V6 / 2JZ-GE'),
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _transmissionCtrl,
-                    decoration: const InputDecoration(labelText: 'Transmission (optional)', hintText: 'e.g. Auto / Manual / CVT'),
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _drivetrainCtrl,
-                    decoration: const InputDecoration(labelText: 'Drivetrain (optional)', hintText: 'e.g. FWD / RWD / AWD / 4WD'),
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _idCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Identifier (optional)',
-                      hintText: 'VIN / rego / serial / stock #',
-                    ),
-                    textCapitalization: TextCapitalization.characters,
-                    textInputAction: TextInputAction.next,
-                    inputFormatters: [LengthLimitingTextInputFormatter(50)],
-                    onChanged: (v) {
-                      final upper = v.toUpperCase();
-                      if (v != upper) {
-                        _idCtrl.value = _idCtrl.value.copyWith(
-                          text: upper,
-                          selection: TextSelection.collapsed(offset: upper.length),
-                        );
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _colorCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Colour (optional)',
-                      hintText: 'e.g. Silver, Gunmetal Grey',
-                      prefixIcon: Icon(Icons.palette_outlined),
-                    ),
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                    inputFormatters: [LengthLimitingTextInputFormatter(50)],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: TextFormField(
-                          controller: _usageCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Usage reading (optional)',
-                            hintText: 'e.g. 120000',
-                            prefixIcon: Icon(Icons.speed_outlined),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Reassurance text
+            const Text(
+              'Takes 5 seconds',
+              style: TextStyle(fontSize: 13, color: Color(0xFFE8700A), fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+
+            // Make
+            _MakeAutocompleteField(
+              key: const ValueKey('make_car'),
+              controller: _makeCtrl,
+              itemType: _itemType,
+              onMakeChanged: (m) => setState(() {
+                _makeValue = m;
+                _modelCtrl.clear();
+              }),
+            ),
+            const SizedBox(height: 12),
+
+            // Model
+            _ModelAutocompleteField(
+              key: ValueKey('model_$_makeValue'),
+              controller: _modelCtrl,
+              itemType: _itemType,
+              make: _makeValue,
+            ),
+            const SizedBox(height: 12),
+
+            // Year — tap to pick from dropdown
+            GestureDetector(
+              onTap: () async {
+                final picked = await showDialog<int>(
+                  context: context,
+                  builder: (ctx) => StatefulBuilder(
+                    builder: (ctx, setLocal) {
+                      final yrs = _showEarlierYears
+                          ? [...List.generate(15, (i) => DateTime.now().year - i),
+                             ...List.generate(15, (i) => DateTime.now().year - 15 - i)]
+                          : List.generate(15, (i) => DateTime.now().year - i);
+                      return AlertDialog(
+                        title: const Text('Select Year'),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                        content: SizedBox(
+                          width: double.maxFinite,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ...yrs.map((y) => ListTile(
+                                dense: true,
+                                title: Text('$y'),
+                                trailing: y == _selectedYear
+                                    ? const Icon(Icons.check, color: Color(0xFFE8700A))
+                                    : null,
+                                onTap: () => Navigator.pop(ctx, y),
+                              )),
+                              if (!_showEarlierYears)
+                                ListTile(
+                                  dense: true,
+                                  title: const Text('Earlier...', style: TextStyle(color: Colors.white54)),
+                                  onTap: () => setLocal(() => _showEarlierYears = true),
+                                ),
+                            ],
                           ),
-                          keyboardType: TextInputType.number,
-                          textInputAction: TextInputAction.next,
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        flex: 2,
-                        child: DropdownButtonFormField<String>(
-                          initialValue: _usageUnit,
-                          decoration: const InputDecoration(labelText: 'Unit'),
-                          items: const [
-                            DropdownMenuItem(value: 'km', child: Text('km')),
-                            DropdownMenuItem(value: 'miles', child: Text('miles')),
-                            DropdownMenuItem(value: 'hours', child: Text('hours')),
-                          ],
-                          onChanged: (v) => setState(() => _usageUnit = v ?? 'km'),
-                        ),
-                      ),
-                    ],
+                      );
+                    },
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Vehicle details are copied into parts added under this vehicle. Accurate information helps keep part records reliable.',
-                    style: TextStyle(fontSize: 11, color: Colors.white38),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _purchaseCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Purchase price (optional)',
-                      hintText: 'e.g. 2500 or 2500.00',
-                      prefixText: '\$',
+                );
+                if (picked != null) setState(() => _selectedYear = picked);
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white24),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '$_selectedYear',
+                      style: const TextStyle(fontSize: 16, color: Colors.white),
                     ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    textInputAction: TextInputAction.done,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _notesCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Notes / Damage (optional)',
-                      hintText: 'e.g. front hit, flood, engine knocks, rolled',
-                      prefixIcon: Icon(Icons.warning_amber_outlined),
-                      alignLabelWithHint: true,
-                    ),
-                    maxLines: 3,
-                    maxLength: 2000,
-                    textCapitalization: TextCapitalization.sentences,
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _pickDate,
-                    icon: const Icon(Icons.calendar_today),
-                    label: Text('Acquired: ${formatDateShort(_acquiredAt)}'),
-                  ),
-                ],
+                    const Icon(Icons.arrow_drop_down, color: Colors.white54),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+
+            const SizedBox(height: 8),
+            const Text(
+              'You can edit this later',
+              style: TextStyle(fontSize: 12, color: Colors.white38),
+            ),
+
+            const Spacer(),
+
+            // Create Vehicle button
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE8700A),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                child: const Text('Create Vehicle'),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }
