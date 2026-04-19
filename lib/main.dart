@@ -1301,23 +1301,30 @@ Future<void> maybeShowFirstPartPrompt(BuildContext context) async {
   );
 }
 
-Future<void> maybeShowFirstSalePrompt(BuildContext context) async {
+Future<void> maybeShowFirstSalePrompt(BuildContext context, {int? saleCents}) async {
   if (isPro) return;
   final prefs = await SharedPreferences.getInstance();
   if (prefs.getBool(_kFirstSalePromptShown) ?? false) return;
   await prefs.setBool(_kFirstSalePromptShown, true);
   AnalyticsService.logEvent('first_sale_upgrade_prompt');
   if (!context.mounted) return;
+  final amountStr = (saleCents != null && saleCents > 0)
+      ? formatMoneyFromCents(saleCents)
+      : null;
   await showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: const Color(0xFF161B22),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('You just made money with WreckLog 🎉',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+      title: Text(
+        amountStr != null
+            ? 'You just made $amountStr with WreckLog 🎉'
+            : 'You just made your first sale 🎉',
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+      ),
       content: const Text(
-        'Unlock unlimited parts and vehicles to keep going.',
+        'Unlock unlimited parts and vehicles to keep the money coming.',
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 14, color: Colors.white60),
       ),
@@ -4840,6 +4847,34 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
             const SizedBox(height: 10),
           ],
 
+          // ── Total earned banner (shows once any part is sold) ────────
+          if (_v.soldRevenueCents > 0) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: Colors.green.withValues(alpha: 0.1),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.attach_money_rounded, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Earned from this vehicle: ${formatMoneyFromCents(_v.soldRevenueCents)}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+
           // ── 4 stat boxes ─────────────────────────────────────────────
           Row(
             children: [
@@ -5240,7 +5275,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
       FirestoreService.upsertPart(auth.uid!, _part.vehicleId!, _part.toJson());
     }
     widget.onPartEdited?.call(_part);
-    if (mounted) await maybeShowFirstSalePrompt(context);
+    if (mounted) await maybeShowFirstSalePrompt(context, saleCents: _part.salePriceCents);
     if (mounted) Navigator.of(context).pop(_part);
   }
 
