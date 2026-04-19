@@ -285,6 +285,24 @@ class _AppShellState extends State<AppShell> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const LandingScreen()),
       );
+      return;
+    }
+    // New user coming from LandingScreen with no vehicles — skip home, go straight
+    // to Add Vehicle so they reach their first value moment immediately.
+    if (v.isEmpty && mounted && widget.allowEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final created = await Navigator.of(context).push<Vehicle>(
+          MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
+        );
+        if (created == null || !mounted) return;
+        await _addVehicle(created);
+        if (!mounted) return;
+        final updated = await Navigator.of(context).push<Vehicle>(
+          MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: _vehicles)),
+        );
+        if (updated != null) await _updateVehicle(updated);
+      });
     }
   }
 
@@ -4853,24 +4871,78 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
           const SizedBox(height: 12),
 
           if (shownParts.isEmpty)
-            AppCard(
-              child: Column(
-                children: [
-                  const Icon(Icons.inventory_2, size: 40),
-                  const SizedBox(height: 10),
-                  Text(
-                    _v.parts.isEmpty ? 'No parts yet' : 'No parts match your search',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _v.parts.isEmpty
-                        ? 'Add parts as you dismantle the vehicle.'
-                        : 'Try a different search or side filter.',
-                  ),
-                ],
-              ),
-            )
+            _v.parts.isEmpty
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(28),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(kRadius),
+                      border: Border.all(color: const Color(0xFFE8700A).withValues(alpha: 0.3)),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          const Color(0xFFE8700A).withValues(alpha: 0.08),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8700A).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFE8700A).withValues(alpha: 0.3)),
+                          ),
+                          child: const Icon(Icons.build_rounded, size: 36, color: Color(0xFFE8700A)),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'No parts added yet',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Tap Add Part to log your first part.\nTrack what\'s in stock, listed, and sold.',
+                          style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.55), height: 1.6),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 22),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _addPart,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add Part'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFE8700A),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : AppCard(
+                    child: Column(
+                      children: [
+                        const Icon(Icons.inventory_2, size: 40),
+                        const SizedBox(height: 10),
+                        Text(
+                          'No parts match your search',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text('Try a different search or side filter.'),
+                      ],
+                    ),
+                  )
           else ..._buildGroupedParts(needsGroup, listedGroup, soldGroup, context),
             ],
           ),
