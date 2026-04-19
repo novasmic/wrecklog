@@ -1265,7 +1265,41 @@ Future<void> _saveDebugProFlag(bool value) async {
   await prefs.setBool(_kDebugProKey, value);
 }
 
+const String _kFirstPartPromptShown = 'first_part_prompt_shown';
 const String _kFirstSalePromptShown = 'first_sale_prompt_shown';
+
+Future<void> maybeShowFirstPartPrompt(BuildContext context) async {
+  final prefs = await SharedPreferences.getInstance();
+  if (prefs.getBool(_kFirstPartPromptShown) ?? false) return;
+  await prefs.setBool(_kFirstPartPromptShown, true);
+  AnalyticsService.logEvent('first_part_added');
+  if (!context.mounted) return;
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF161B22),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text(
+        "You're now tracking parts 🔧",
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+      ),
+      content: const Text(
+        'When it sells, mark it sold and WreckLog will track your profit.\n\nAdd a listing link so buyers can find it.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 14, color: Colors.white60, height: 1.5),
+      ),
+      actionsAlignment: MainAxisAlignment.center,
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE8700A)),
+          child: const Text('Got it'),
+        ),
+      ],
+    ),
+  );
+}
 
 Future<void> maybeShowFirstSalePrompt(BuildContext context) async {
   if (isPro) return;
@@ -4033,6 +4067,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       if (auth.uid != null) FirestoreService.upsertPart(auth.uid!, _v.id, p.toJson());
       AnalyticsService.logPartAdded(p.name, p.category, p.vehicleMake, p.vehicleModel);
     }
+    if (mounted) await maybeShowFirstPartPrompt(context);
   }
 
   void _saveAndExit() => Navigator.of(context).pop(_v);
