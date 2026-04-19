@@ -351,12 +351,14 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _addVehicle(Vehicle created) async {
+    final isFirst = _vehicles.isEmpty;
     setState(() => _vehicles = [created, ..._vehicles]);
     await _persist();
     if (auth.uid != null) {
       FirestoreService.upsertVehicle(auth.uid!, created.toJson());
     }
     AnalyticsService.logVehicleCreated(created.make, created.model, created.year);
+    if (isFirst) AnalyticsService.logEvent('first_vehicle_created');
   }
 
   Future<void> _deleteVehicle(String id) async {
@@ -1267,6 +1269,8 @@ Future<void> _saveDebugProFlag(bool value) async {
 
 const String _kFirstPartPromptShown = 'first_part_prompt_shown';
 const String _kFirstSalePromptShown = 'first_sale_prompt_shown';
+const String _kFirstListingAdded = 'first_listing_added_v1';
+const String _kEarnedBannerSeen = 'earned_banner_seen_v1';
 
 Future<void> maybeShowFirstPartPrompt(BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
@@ -3372,6 +3376,12 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   static const ItemType _itemType = ItemType.car;
 
   @override
+  void initState() {
+    super.initState();
+    AnalyticsService.logEvent('add_vehicle_started');
+  }
+
+  @override
   void dispose() {
     _makeCtrl.dispose();
     _modelCtrl.dispose();
@@ -3379,6 +3389,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   }
 
   void _skip() {
+    AnalyticsService.logEvent('skip_vehicle_used');
     final v = Vehicle(
       id: newId(),
       make: '',
@@ -3974,6 +3985,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       );
       if (!mounted) return;
     }
+    AnalyticsService.logEvent('add_part_started');
     final created = await Navigator.of(context).push<List<Part>>(
       MaterialPageRoute(builder: (_) => AddPartScreen(allVehicles: _allVehiclesWithCurrent(), vehicle: _v)),
     );
@@ -5140,6 +5152,13 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     });
     widget.onPartEdited?.call(_part);
     AnalyticsService.logListingAdded(created.platform);
+    // first_listing_added — fires once per install
+    SharedPreferences.getInstance().then((prefs) {
+      if (!(prefs.getBool(_kFirstListingAdded) ?? false)) {
+        prefs.setBool(_kFirstListingAdded, true);
+        AnalyticsService.logEvent('first_listing_added');
+      }
+    });
   }
 
   Future<void> _markSold() async {
@@ -5182,6 +5201,13 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
       for (final l in _part.listings) { l.isLive = false; }
     });
     AnalyticsService.logPartSold(_part.name, _part.salePriceCents, _part.category);
+    // earned_banner_seen — fires once, the first time a user sees the earned banner
+    SharedPreferences.getInstance().then((prefs) {
+      if (!(prefs.getBool(_kEarnedBannerSeen) ?? false)) {
+        prefs.setBool(_kEarnedBannerSeen, true);
+        AnalyticsService.logEvent('earned_banner_seen');
+      }
+    });
     if (auth.uid != null && _part.vehicleId != null) {
       FirestoreService.upsertPart(auth.uid!, _part.vehicleId!, _part.toJson());
     }

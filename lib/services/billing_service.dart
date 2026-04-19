@@ -87,7 +87,7 @@ class BillingService extends ChangeNotifier {
     if (!isAvailable || monthlyProduct == null) {
       throw Exception('Monthly subscription not available. Please check your connection and try again.');
     }
-    await AnalyticsService.logSubscriptionStarted(kMonthlyId);
+    await AnalyticsService.logCheckoutStarted(kMonthlyId);
     final param = PurchaseParam(productDetails: monthlyProduct!);
     await _iap.buyNonConsumable(purchaseParam: param);
   }
@@ -96,7 +96,7 @@ class BillingService extends ChangeNotifier {
     if (!isAvailable || yearlyProduct == null) {
       throw Exception('Yearly subscription not available. Please check your connection and try again.');
     }
-    await AnalyticsService.logSubscriptionStarted(kYearlyId);
+    await AnalyticsService.logCheckoutStarted(kYearlyId);
     final param = PurchaseParam(productDetails: yearlyProduct!);
     await _iap.buyNonConsumable(purchaseParam: param);
   }
@@ -180,7 +180,7 @@ class BillingService extends ChangeNotifier {
                   product.rawPrice,
                   product.currencyCode,
                 );
-                await AnalyticsService.logSubscriptionCompleted(
+                await AnalyticsService.logPurchaseCompleted(
                   p.productID,
                   product.rawPrice,
                   product.currencyCode,

@@ -15,18 +15,18 @@ class AnalyticsService {
     }
   }
 
-  static Future<void> logSubscriptionStarted(String productId) async {
+  static Future<void> logCheckoutStarted(String productId) async {
     try {
       await _analytics.logEvent(
-        name: 'subscription_started',
+        name: 'checkout_started',
         parameters: {'product_id': productId},
       );
     } catch (e) {
-      if (kDebugMode) debugPrint('Analytics logSubscriptionStarted error: $e');
+      if (kDebugMode) debugPrint('Analytics logCheckoutStarted error: $e');
     }
   }
 
-  static Future<void> logSubscriptionCompleted(String productId, double amount, String currency) async {
+  static Future<void> logPurchaseCompleted(String productId, double amount, String currency) async {
     try {
       await _analytics.logPurchase(
         currency: currency,
@@ -34,11 +34,11 @@ class AnalyticsService {
         items: [AnalyticsEventItem(itemId: productId, itemName: productId)],
       );
       await _analytics.logEvent(
-        name: 'subscription_completed',
+        name: 'purchase_completed',
         parameters: {'product_id': productId},
       );
     } catch (e) {
-      if (kDebugMode) debugPrint('Analytics logSubscriptionCompleted error: $e');
+      if (kDebugMode) debugPrint('Analytics logPurchaseCompleted error: $e');
     }
   }
 
@@ -105,7 +105,7 @@ class AnalyticsService {
 
   static Future<void> logUpgradeViewed() async {
     try {
-      await _analytics.logEvent(name: 'upgrade_viewed');
+      await _analytics.logEvent(name: 'paywall_viewed');
     } catch (e) {
       if (kDebugMode) debugPrint('Analytics logUpgradeViewed error: $e');
     }
