@@ -3372,6 +3372,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   String _makeValue = '';
   int _selectedYear = DateTime.now().year;
   bool _showEarlierYears = false;
+  bool _submitted = false; // double-tap guard
 
   static const ItemType _itemType = ItemType.car;
 
@@ -3389,6 +3390,8 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   }
 
   void _skip() {
+    if (_submitted) return;
+    _submitted = true;
     AnalyticsService.logEvent('skip_vehicle_used');
     final v = Vehicle(
       id: newId(),
@@ -3407,6 +3410,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   }
 
   void _save() {
+    if (_submitted) return;
     final make = _makeCtrl.text.trim();
     final model = _modelCtrl.text.trim();
     if (make.isEmpty || model.isEmpty) {
@@ -3428,6 +3432,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
       color: '',
       createdAt: DateTime.now(),
     );
+    _submitted = true;
     RecentModelStorage.add(_itemType, v.make, v.model);
     Navigator.of(context).pop(v);
   }
@@ -5153,12 +5158,11 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     widget.onPartEdited?.call(_part);
     AnalyticsService.logListingAdded(created.platform);
     // first_listing_added — fires once per install
-    SharedPreferences.getInstance().then((prefs) {
-      if (!(prefs.getBool(_kFirstListingAdded) ?? false)) {
-        prefs.setBool(_kFirstListingAdded, true);
-        AnalyticsService.logEvent('first_listing_added');
-      }
-    });
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(_kFirstListingAdded) ?? false)) {
+      await prefs.setBool(_kFirstListingAdded, true);
+      AnalyticsService.logEvent('first_listing_added');
+    }
   }
 
   Future<void> _markSold() async {
@@ -5202,12 +5206,11 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     });
     AnalyticsService.logPartSold(_part.name, _part.salePriceCents, _part.category);
     // earned_banner_seen — fires once, the first time a user sees the earned banner
-    SharedPreferences.getInstance().then((prefs) {
-      if (!(prefs.getBool(_kEarnedBannerSeen) ?? false)) {
-        prefs.setBool(_kEarnedBannerSeen, true);
-        AnalyticsService.logEvent('earned_banner_seen');
-      }
-    });
+    final earnedPrefs = await SharedPreferences.getInstance();
+    if (!(earnedPrefs.getBool(_kEarnedBannerSeen) ?? false)) {
+      await earnedPrefs.setBool(_kEarnedBannerSeen, true);
+      AnalyticsService.logEvent('earned_banner_seen');
+    }
     if (auth.uid != null && _part.vehicleId != null) {
       FirestoreService.upsertPart(auth.uid!, _part.vehicleId!, _part.toJson());
     }
