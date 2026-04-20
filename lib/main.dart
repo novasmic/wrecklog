@@ -5247,7 +5247,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
                       FloatingActionButton.extended(
                         heroTag: 'fab_add_listing',
                         onPressed: _addListing,
-                        backgroundColor: const Color(0xFFE07B2A),
+                        backgroundColor: const Color(0xFFE8700A),
                         icon: const Icon(Icons.link),
                         label: const Text('Add Listing'),
                       ),
