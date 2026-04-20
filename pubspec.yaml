@@ -2,7 +2,7 @@ name: wrecklog
 description: A simple vehicle dismantling and parts tracking app.
 publish_to: "none"
 
-version: 1.9.9+102
+version: 1.9.9+103
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
