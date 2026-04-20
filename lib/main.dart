@@ -3374,9 +3374,9 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   bool _submitted = false; // double-tap guard
 
   static final _yearList = List.generate(
-    DateTime.now().year - 1969,
+    DateTime.now().year - 1919,
     (i) => DateTime.now().year - i,
-  ); // current year down to 1970
+  ); // current year down to 1920
 
   static const ItemType _itemType = ItemType.car;
 
