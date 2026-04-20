@@ -3371,8 +3371,12 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
 
   String _makeValue = '';
   int _selectedYear = DateTime.now().year;
-  bool _showEarlierYears = false;
   bool _submitted = false; // double-tap guard
+
+  static final _yearList = List.generate(
+    DateTime.now().year - 1969,
+    (i) => DateTime.now().year - i,
+  ); // current year down to 1970
 
   static const ItemType _itemType = ItemType.car;
 
@@ -3483,65 +3487,52 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Year — tap to pick from dropdown
-            GestureDetector(
-              onTap: () async {
-                final picked = await showDialog<int>(
-                  context: context,
-                  builder: (ctx) => StatefulBuilder(
-                    builder: (ctx, setLocal) {
-                      final yrs = _showEarlierYears
-                          ? [...List.generate(15, (i) => DateTime.now().year - i),
-                             ...List.generate(15, (i) => DateTime.now().year - 15 - i)]
-                          : List.generate(15, (i) => DateTime.now().year - i);
-                      return AlertDialog(
-                        title: const Text('Select Year'),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                        content: SizedBox(
-                          width: double.maxFinite,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ...yrs.map((y) => ListTile(
-                                dense: true,
-                                title: Text('$y'),
-                                trailing: y == _selectedYear
-                                    ? const Icon(Icons.check, color: Color(0xFFE8700A))
-                                    : null,
-                                onTap: () => Navigator.pop(ctx, y),
-                              )),
-                              if (!_showEarlierYears)
-                                ListTile(
-                                  dense: true,
-                                  title: const Text('Earlier...', style: TextStyle(color: Colors.white54)),
-                                  onTap: () => setLocal(() => _showEarlierYears = true),
-                                ),
-                            ],
+            // Year — scroll wheel picker (1970 to current year)
+            Container(
+              height: 120,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white24),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Stack(
+                children: [
+                  // Selection highlight
+                  Center(
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8700A).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                  ListWheelScrollView.useDelegate(
+                    itemExtent: 36,
+                    diameterRatio: 1.8,
+                    physics: const FixedExtentScrollPhysics(),
+                    controller: FixedExtentScrollController(
+                      initialItem: _yearList.indexOf(_selectedYear).clamp(0, _yearList.length - 1),
+                    ),
+                    onSelectedItemChanged: (i) => setState(() => _selectedYear = _yearList[i]),
+                    childDelegate: ListWheelChildBuilderDelegate(
+                      childCount: _yearList.length,
+                      builder: (ctx, i) => Center(
+                        child: Text(
+                          '${_yearList[i]}',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: _yearList[i] == _selectedYear
+                                ? FontWeight.w700
+                                : FontWeight.normal,
+                            color: _yearList[i] == _selectedYear
+                                ? Colors.white
+                                : Colors.white38,
                           ),
                         ),
-                      );
-                    },
-                  ),
-                );
-                if (picked != null) setState(() => _selectedYear = picked);
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white24),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '$_selectedYear',
-                      style: const TextStyle(fontSize: 16, color: Colors.white),
+                      ),
                     ),
-                    const Icon(Icons.arrow_drop_down, color: Colors.white54),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
 
