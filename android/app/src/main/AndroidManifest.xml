@@ -34,6 +34,23 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!--
+            Override transient billing/auth activities with noHistory=true.
+            Both activities crash with NPE in onCreate when Android recreates
+            them from the task back stack after the app process has been killed
+            (e.g. phone call during checkout). noHistory prevents them from
+            ever entering the back stack, eliminating the recreation path.
+        -->
+        <activity
+            android:name="com.android.billingclient.api.ProxyBillingActivity"
+            android:exported="false"
+            android:noHistory="true" />
+        <activity
+            android:name="com.google.android.gms.auth.api.signin.internal.SignInHubActivity"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Facebook SDK -->
         <meta-data
             android:name="com.facebook.sdk.ApplicationId"
