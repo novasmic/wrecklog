@@ -65,15 +65,20 @@ class BillingService extends ChangeNotifier {
     // Whenever the user signs into Firebase, sync their Pro status immediately.
     // This covers: (a) signing in after purchasing Pro, (b) app restarts where
     // a previous sync was missed because they weren't signed in at purchase time.
-    FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user != null) {
-        if (isPro) _syncPro(true);
-        PhotoStorage.backfillRemoteUrls();
-        FirestoreSync.instance.start(user.uid);
-      } else {
-        FirestoreSync.instance.stop();
-      }
-    });
+    FirebaseAuth.instance.authStateChanges().listen(
+      (user) {
+        if (user != null) {
+          if (isPro) _syncPro(true);
+          PhotoStorage.backfillRemoteUrls();
+          FirestoreSync.instance.start(user.uid);
+        } else {
+          FirestoreSync.instance.stop();
+        }
+      },
+      onError: (e) {
+        if (kDebugMode) debugPrint('BillingService auth stream error: $e');
+      },
+    );
 
     try {
       isAvailable = await _iap.isAvailable();
