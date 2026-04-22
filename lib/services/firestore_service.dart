@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import '../photo_storage_model.dart';
 
 /// Firestore structure:
 ///   users/{uid}/vehicles/{vehicleId}          — vehicle record
@@ -62,6 +63,47 @@ class FirestoreService {
       await _partsCol(uid, vehicleId).doc(partId).delete();
     } catch (e) {
       if (kDebugMode) debugPrint('Firestore deletePart error: $e');
+    }
+  }
+
+  // ── Pro status ─────────────────────────────────────────────────────────────
+
+  static Future<void> updateUserPro(String uid, bool isPro) async {
+    try {
+      await _db.collection('users').doc(uid).set({
+        'isPro': isPro,
+        'proUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) debugPrint('Firestore updateUserPro error: $e');
+    }
+  }
+
+  // ── Photo metadata ─────────────────────────────────────────────────────────
+
+  static CollectionReference<Map<String, dynamic>> _photoMetaCol(String uid) =>
+      _db.collection('users').doc(uid).collection('photoMeta');
+
+  static Future<void> upsertPhotoMeta(String uid, AppPhoto photo) async {
+    if (photo.remoteUrl == null) return;
+    try {
+      await _photoMetaCol(uid).doc(photo.id).set({
+        'id':        photo.id,
+        'ownerType': photo.ownerType,
+        'ownerId':   photo.ownerId,
+        'remoteUrl': photo.remoteUrl,
+        'createdAt': photo.createdAt,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) debugPrint('Firestore upsertPhotoMeta error: $e');
+    }
+  }
+
+  static Future<void> deletePhotoMeta(String uid, String photoId) async {
+    try {
+      await _photoMetaCol(uid).doc(photoId).delete();
+    } catch (e) {
+      if (kDebugMode) debugPrint('Firestore deletePhotoMeta error: $e');
     }
   }
 

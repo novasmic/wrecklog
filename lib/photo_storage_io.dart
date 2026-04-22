@@ -12,10 +12,12 @@
 //   automatically rebased to the current documents directory on first load,
 //   healing the iOS "broken photos after TestFlight update" issue.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 import 'package:image_picker/image_picker.dart';
@@ -24,6 +26,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'photo_storage_model.dart';
+import 'services/firestore_service.dart';
+import 'services/storage_service.dart';
 export 'photo_storage_model.dart';
 
 // Legacy SharedPreferences key — only used during one-time migration.
@@ -43,6 +47,8 @@ class PhotoStorage {
   // ── Write ─────────────────────────────────────────────────────────────────
   /// Copies [sourcePath] (temp path from image_picker) into our own folder
   /// and saves the metadata record. Returns the saved AppPhoto.
+  /// Fires a background upload to Firebase Storage; the local copy is
+  /// immediately available — the remoteUrl is filled in asynchronously.
   static Future<AppPhoto> add({
     required String ownerType,
     required String ownerId,
@@ -66,7 +72,42 @@ class PhotoStorage {
     final all = await _loadAll();
     all.add(photo);
     await _saveAll(all);
+
+    // Background upload — don't block the caller.
+    unawaited(_uploadAndSync(photo));
+
     return photo;
+  }
+
+  /// Uploads [photo] to Firebase Storage, then updates local metadata and
+  /// Firestore so the web app can display it.
+  static Future<void> _uploadAndSync(AppPhoto photo) async {
+    final url = await StorageService.uploadPhoto(
+      ownerType: photo.ownerType,
+      ownerId:   photo.ownerId,
+      photoId:   photo.id,
+      localPath: photo.pathOrData,
+    );
+    if (url == null) return;
+
+    final updated = AppPhoto(
+      id:         photo.id,
+      ownerType:  photo.ownerType,
+      ownerId:    photo.ownerId,
+      createdAt:  photo.createdAt,
+      pathOrData: photo.pathOrData,
+      remoteUrl:  url,
+    );
+
+    final all = await _loadAll();
+    final idx = all.indexWhere((p) => p.id == photo.id);
+    if (idx >= 0) all[idx] = updated;
+    await _saveAll(all);
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      unawaited(FirestoreService.upsertPhotoMeta(uid, updated));
+    }
   }
 
   /// Convenience wrapper — on iOS/Android XFile always has a valid path.
@@ -88,6 +129,7 @@ class PhotoStorage {
     all.removeWhere((ph) => ph.id == photo.id);
     await _saveAll(all);
     _deleteFile(photo.pathOrData);
+    _deleteRemote(photo);
   }
 
   // ── Delete all for owner (vehicle or part deleted) ────────────────────────
@@ -99,10 +141,22 @@ class PhotoStorage {
         .toList();
     for (final ph in gone) {
       _deleteFile(ph.pathOrData);
+      _deleteRemote(ph);
     }
     all.removeWhere(
         (ph) => ph.ownerType == ownerType && ph.ownerId == ownerId);
     await _saveAll(all);
+  }
+
+  static void _deleteRemote(AppPhoto photo) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    unawaited(StorageService.deletePhoto(
+      ownerType: photo.ownerType,
+      ownerId:   photo.ownerId,
+      photoId:   photo.id,
+    ));
+    unawaited(FirestoreService.deletePhotoMeta(uid, photo.id));
   }
 
   // ── Public loadAll (used by backup) ──────────────────────────────────────
