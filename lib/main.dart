@@ -455,6 +455,9 @@ class _AppShellState extends State<AppShell> {
               if (pIdx < 0) return;
               setState(() => v.parts[pIdx] = updatedPart);
               await _persist();
+              if (auth.uid != null) {
+                FirestoreService.upsertPart(auth.uid!, owningVehicle.id, updatedPart.toJson());
+              }
             },
           ),
           StatsTab(
