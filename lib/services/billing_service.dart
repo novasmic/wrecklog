@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'facebook_service.dart';
 import 'analytics_service.dart';
 import 'firestore_service.dart';
+import 'firestore_sync.dart';
 import '../photo_storage_io.dart';
 
 class BillingService extends ChangeNotifier {
@@ -68,6 +69,9 @@ class BillingService extends ChangeNotifier {
       if (user != null) {
         if (isPro) _syncPro(true);
         PhotoStorage.backfillRemoteUrls();
+        FirestoreSync.instance.start(user.uid);
+      } else {
+        FirestoreSync.instance.stop();
       }
     });
 

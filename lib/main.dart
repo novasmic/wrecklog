@@ -24,6 +24,7 @@ import 'screens/auth_screen.dart';
 import 'services/facebook_service.dart';
 import 'services/analytics_service.dart';
 import 'services/firestore_service.dart';
+import 'services/firestore_sync.dart';
 import 'services/rating_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -261,13 +262,71 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    FirestoreSync.instance.callback = _onFirestoreUpdate;
     _load();
   }
 
   @override
   void dispose() {
     _saveDebounce?.cancel();
+    FirestoreSync.instance.callback = null;
     super.dispose();
+  }
+
+  // Merges remote part changes received from Firestore into local state.
+  // Uses last-write-wins: remote wins only if its syncedAt is newer than
+  // the local part's updatedAt. New parts (not in local) are always added.
+  void _onFirestoreUpdate({
+    required String vehicleId,
+    required List<Map<String, dynamic>> remoteParts,
+    required List<String> deletedPartIds,
+  }) {
+    if (!mounted) return;
+    final vIdx = _vehicles.indexWhere((v) => v.id == vehicleId);
+    if (vIdx < 0) return; // vehicle not present locally — ignore
+
+    final vehicle = _vehicles[vIdx];
+    bool changed = false;
+
+    for (final remoteJson in remoteParts) {
+      final partId = remoteJson['id'] as String?;
+      if (partId == null) continue;
+
+      final remoteSyncedAtMs = remoteJson['_syncedAtMs'] as int?;
+      final localIdx = vehicle.parts.indexWhere((p) => p.id == partId);
+
+      if (localIdx < 0) {
+        // New part from another device — add it.
+        try {
+          vehicle.parts.add(Part.fromJson(remoteJson));
+          changed = true;
+        } catch (_) {}
+      } else {
+        final local = vehicle.parts[localIdx];
+        final localUpdatedMs = local.updatedAt?.millisecondsSinceEpoch;
+        // Remote wins if we have a syncedAt timestamp and it is strictly
+        // newer than the local edit time (or if local has never been edited).
+        final remoteIsNewer = remoteSyncedAtMs != null &&
+            (localUpdatedMs == null || remoteSyncedAtMs > localUpdatedMs);
+        if (remoteIsNewer) {
+          try {
+            vehicle.parts[localIdx] = Part.fromJson(remoteJson);
+            changed = true;
+          } catch (_) {}
+        }
+      }
+    }
+
+    for (final deletedId in deletedPartIds) {
+      final before = vehicle.parts.length;
+      vehicle.parts.removeWhere((p) => p.id == deletedId);
+      if (vehicle.parts.length != before) changed = true;
+    }
+
+    if (changed) {
+      setState(() {});
+      _persist();
+    }
   }
 
   Future<void> _load() async {
