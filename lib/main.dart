@@ -837,7 +837,7 @@ class Part {
 
   // Part metadata
   String? partCondition;
-  String? side; // 'Left' | 'Right' | 'Pair' | null
+  String? side; // 'Left' | 'Right' | 'Front' | 'Rear' | 'Pair' | null
   DateTime? dateListed;
   DateTime? dateSold;
 
@@ -4051,7 +4051,7 @@ class VehicleDetailScreen extends StatefulWidget {
 class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     with WidgetsBindingObserver {
   late Vehicle _v;
-  String? _sideFilter;
+  final Set<String> _sideFilters = {};
   bool _selectMode = false;
   final Set<String> _selectedPartIds = {};
   final _searchCtrl = TextEditingController();
@@ -4491,46 +4491,20 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Primary attention banner — only shown when parts need listing
-        if (needsCount > 0)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8400A).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE8400A).withValues(alpha: 0.4)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFE8400A)),
-              const SizedBox(width: 8),
-              Text(
-                '$needsCount part${needsCount == 1 ? '' : 's'} need${needsCount == 1 ? 's' : ''} listing — tap to add links',
-                style: const TextStyle(
-                  color: Color(0xFFE8400A),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
-              ),
-            ]),
-          ),
-        if (needsCount > 0) const SizedBox(height: 8),
+    if (needsCount == 0 && listedCount == 0 && soldCount == 0) return const SizedBox.shrink();
 
-        // Secondary stats row
-        if (listedCount > 0 || soldCount > 0)
-          Row(children: [
-            if (listedCount > 0) ...[
-              statChip('Listed', listedCount, Colors.green),
-              const SizedBox(width: 8),
-            ],
-            if (soldCount > 0)
-              statChip('Sold', soldCount, Colors.white54),
-          ]),
+    return Row(children: [
+      if (needsCount > 0) ...[
+        statChip('Needs Listing', needsCount, const Color(0xFFE8400A)),
+        const SizedBox(width: 8),
       ],
-    );
+      if (listedCount > 0) ...[
+        statChip('Listed', listedCount, Colors.green),
+        const SizedBox(width: 8),
+      ],
+      if (soldCount > 0)
+        statChip('Sold', soldCount, Colors.white54),
+    ]);
   }
 
   /// Builds a single status section (header + part cards).
@@ -4658,8 +4632,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     var parts = _v.parts;
 
     // Apply side filter
-    if (_sideFilter != null) {
-      parts = parts.where((p) => p.side == _sideFilter).toList();
+    if (_sideFilters.isNotEmpty) {
+      parts = parts.where((p) => p.side != null && _sideFilters.contains(p.side)).toList();
     }
 
     // Apply search query
@@ -4741,9 +4715,17 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     }
 
     Widget sideChip(String label, String? value) {
-      final active = _sideFilter == value;
+      final active = value == null ? _sideFilters.isEmpty : _sideFilters.contains(value);
       return GestureDetector(
-        onTap: () => setState(() => _sideFilter = active ? null : value),
+        onTap: () => setState(() {
+          if (value == null) {
+            _sideFilters.clear();
+          } else if (_sideFilters.contains(value)) {
+            _sideFilters.remove(value);
+          } else {
+            _sideFilters.add(value);
+          }
+        }),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: BoxDecoration(
@@ -4958,6 +4940,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
               sideChip('Left', 'Left'),
               const SizedBox(width: 6),
               sideChip('Right', 'Right'),
+              const SizedBox(width: 6),
+              sideChip('Front', 'Front'),
+              const SizedBox(width: 6),
+              sideChip('Rear', 'Rear'),
               const SizedBox(width: 6),
               sideChip('Pair', 'Pair'),
             ]),
@@ -6184,15 +6170,19 @@ class _AddPartScreenState extends State<AddPartScreen> {
     return best;
   }
 
-  /// Detects Left/Right/Pair from keywords in the part name.
+  /// Detects Left/Right/Front/Rear/Pair from keywords in the part name.
   String? _detectSideFromName(String name) {
     final lower = name.toLowerCase();
     final leftKw  = ['left', ' lh', 'lh ', 'driver side', 'drivers side'];
     final rightKw = ['right', ' rh', 'rh ', 'passenger side'];
+    final frontKw = ['front', ' frt', 'frt '];
+    final rearKw  = ['rear', ' rr', 'rr ', 'back ', ' back'];
     final pairKw  = ['pair', 'set of 2', 'both sides'];
     if (pairKw.any((k) => lower.contains(k)))  return 'Pair';
     if (leftKw.any((k) => lower.contains(k)))  return 'Left';
     if (rightKw.any((k) => lower.contains(k))) return 'Right';
+    if (frontKw.any((k) => lower.contains(k))) return 'Front';
+    if (rearKw.any((k) => lower.contains(k)))  return 'Rear';
     return null;
   }
 
@@ -6681,7 +6671,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                         SizedBox(width: 6),
                         Text('Side:', style: TextStyle(fontSize: 13, color: Colors.white54)),
                       ]),
-                      ...['Left', 'Right', 'Pair'].map((s) => ChoiceChip(
+                      ...['Left', 'Right', 'Front', 'Rear', 'Pair'].map((s) => ChoiceChip(
                         label: Text(s, style: const TextStyle(fontSize: 12)),
                         selected: _side == s,
                         onSelected: (v) => setState(() => _side = v ? s : null),
@@ -7137,7 +7127,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
                 runSpacing: 4,
                 children: [
                   const Text('Side:', style: TextStyle(fontSize: 13, color: Colors.white54)),
-                  ...['Left', 'Right', 'Pair'].map((s) => ChoiceChip(
+                  ...['Left', 'Right', 'Front', 'Rear', 'Pair'].map((s) => ChoiceChip(
                     label: Text(s, style: const TextStyle(fontSize: 12)),
                     selected: _side == s,
                     onSelected: (v) => setState(() => _side = v ? s : null),
