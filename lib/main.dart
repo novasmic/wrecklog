@@ -309,10 +309,24 @@ class _AppShellState extends State<AppShell> {
   Future<void> _maybeMigrateToFirestore(List<Vehicle> vehicles) async {
     final uid = auth.uid;
     if (uid == null) return; // not signed in — skip
+
+    // One-time initial migration.
     final already = await FirestoreService.hasMigrated(uid);
-    if (already) return;
+    if (!already) {
+      final json = vehicles.map((v) => v.toJson()).toList();
+      await FirestoreService.migrateLocalData(uid, json);
+      return;
+    }
+
+    // Version-based re-sync — bump kFirestoreSyncVersion when a full
+    // re-sync is needed (e.g. after fixing a sync bug).
+    const kFirestoreSyncVersion = 2;
+    final prefs = await SharedPreferences.getInstance();
+    final lastSync = prefs.getInt('firestore_sync_version') ?? 0;
+    if (lastSync >= kFirestoreSyncVersion) return;
     final json = vehicles.map((v) => v.toJson()).toList();
     await FirestoreService.migrateLocalData(uid, json);
+    await prefs.setInt('firestore_sync_version', kFirestoreSyncVersion);
   }
 
   // Debounced save — batches rapid successive changes (e.g. adding many parts)
