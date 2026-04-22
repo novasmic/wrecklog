@@ -339,6 +339,8 @@ class _AppShellState extends State<AppShell> {
     });
     // Migrate local data to Firestore on first signed-in launch.
     _maybeMigrateToFirestore(v);
+    // Show one-time web app promo bottom sheet.
+    _maybeShowWebPromo();
     // Only redirect to landing on cold start — not when coming from LandingScreen
     if (v.isEmpty && mounted && !widget.allowEmpty) {
       Navigator.of(context).pushReplacement(
@@ -363,6 +365,64 @@ class _AppShellState extends State<AppShell> {
         if (updated != null && mounted) await _updateVehicle(updated);
       });
     }
+  }
+
+  Future<void> _maybeShowWebPromo() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('shown_web_promo_v1') == true) return;
+    await prefs.setBool('shown_web_promo_v1', true);
+    if (!mounted) return;
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1408),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Icon(Icons.computer, color: Color(0xFFE8700A), size: 36),
+            const SizedBox(height: 14),
+            const Text(
+              'WreckLog is now on the web!',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Sign in to sync your data across all your devices and manage parts from your computer at app.wrecklog.com.au',
+              style: TextStyle(fontSize: 14, color: Colors.white70, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(_);
+                launchUrl(Uri.parse('https://app.wrecklog.com.au'));
+              },
+              child: const Text('Open Web App'),
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: () => Navigator.pop(_),
+              child: const Text('Maybe later'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _maybeMigrateToFirestore(List<Vehicle> vehicles) async {
