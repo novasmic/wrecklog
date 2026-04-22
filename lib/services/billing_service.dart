@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'facebook_service.dart';
 import 'analytics_service.dart';
+import 'firestore_service.dart';
 
 class BillingService extends ChangeNotifier {
   // ── Product IDs ────────────────────────────────────────────────────────────
@@ -124,6 +126,10 @@ class BillingService extends ChangeNotifier {
     // preserve the user's existing Pro status rather than incorrectly revoking.
     if (_sawAnyCallback && !_foundActive) {
       await _revokePro();
+    } else if (_foundActive) {
+      // Always sync to Firestore after a successful restore — _grantPro() skips
+      // the sync when isPro is already true in local cache.
+      _syncPro(true);
     }
 
     _restoreInProgress = false;
@@ -136,6 +142,7 @@ class BillingService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kProKey, true);
     notifyListeners();
+    _syncPro(true);
   }
 
   Future<void> _revokePro() async {
@@ -144,6 +151,13 @@ class BillingService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kProKey, false);
     notifyListeners();
+    _syncPro(false);
+  }
+
+  void _syncPro(bool value) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    FirestoreService.updateUserPro(uid, value);
   }
 
   // ── Purchase stream handler ────────────────────────────────────────────────
