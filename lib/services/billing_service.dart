@@ -43,6 +43,10 @@ class BillingService extends ChangeNotifier {
   bool _foundActive       = false;
   bool _sawAnyCallback    = false;
 
+  // True when Pro is active but no Firebase account is signed in.
+  // UI should prompt the user to sign in so Pro syncs to Firestore.
+  bool needsAccountLink = false;
+
   // ── Price getters ──────────────────────────────────────────────────────────
   // Return App Store / Play Store localised price when available.
   // Shows 'Loading…' if products haven't loaded yet — avoids showing wrong currency.
@@ -55,6 +59,15 @@ class BillingService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     isPro = prefs.getBool(_kProKey) ?? false;
     notifyListeners();
+
+    // Whenever the user signs into Firebase, sync their Pro status immediately.
+    // This covers: (a) signing in after purchasing Pro, (b) app restarts where
+    // a previous sync was missed because they weren't signed in at purchase time.
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null && isPro) {
+        _syncPro(true);
+      }
+    });
 
     try {
       isAvailable = await _iap.isAvailable();
@@ -156,7 +169,17 @@ class BillingService extends ChangeNotifier {
 
   void _syncPro(bool value) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      if (value && !needsAccountLink) {
+        needsAccountLink = true;
+        notifyListeners();
+      }
+      return;
+    }
+    if (needsAccountLink) {
+      needsAccountLink = false;
+      notifyListeners();
+    }
     FirestoreService.updateUserPro(uid, value);
   }
 

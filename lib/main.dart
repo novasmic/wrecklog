@@ -8948,7 +8948,7 @@ class _SettingsTabState extends State<SettingsTab> {
             children: [
               // ── Account ───────────────────────────────────────────────
               AnimatedBuilder(
-                animation: auth,
+                animation: Listenable.merge([auth, billing]),
                 builder: (context, _) {
                   final user = auth.currentUser;
                   return AppCard(
@@ -8958,20 +8958,35 @@ class _SettingsTabState extends State<SettingsTab> {
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => const AuthScreen()),
                             ),
-                            child: const Row(
+                            child: Row(
                               children: [
-                                Icon(Icons.person_outline, color: Color(0xFFE8700A)),
-                                SizedBox(width: 12),
+                                const Icon(Icons.person_outline, color: Color(0xFFE8700A)),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Sign in', style: TextStyle(fontWeight: FontWeight.w700)),
-                                      Text('Sync your data across devices', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                                      Text(
+                                        billing.needsAccountLink
+                                            ? 'Sign in to activate web access'
+                                            : 'Sign in',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: billing.needsAccountLink
+                                              ? const Color(0xFFE8700A)
+                                              : null,
+                                        ),
+                                      ),
+                                      Text(
+                                        billing.needsAccountLink
+                                            ? 'Required to use your Pro subscription on the web app'
+                                            : 'Sync your data across devices',
+                                        style: const TextStyle(color: Colors.white38, fontSize: 12),
+                                      ),
                                     ],
                                   ),
                                 ),
-                                Icon(Icons.chevron_right, color: Colors.white24),
+                                const Icon(Icons.chevron_right, color: Colors.white24),
                               ],
                             ),
                           )
