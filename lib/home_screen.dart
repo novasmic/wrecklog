@@ -261,6 +261,37 @@ class HomeScreen extends StatelessWidget {
 
                 const Spacer(flex: 2),
 
+                // ── Web app banner ─────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      color: Colors.white.withValues(alpha: 0.03),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.computer_outlined, size: 16, color: Colors.white.withValues(alpha: 0.4)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Also available at app.wrecklog.com.au — sign in to sync across devices.',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.35),
+                              fontSize: 11,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 4),
+
                 // ── Settings link ──────────────────────────────────
                 TextButton.icon(
                   onPressed: onSettings,
