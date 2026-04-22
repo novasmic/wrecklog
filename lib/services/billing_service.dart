@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'facebook_service.dart';
 import 'analytics_service.dart';
 import 'firestore_service.dart';
+import '../photo_storage_io.dart';
 
 class BillingService extends ChangeNotifier {
   // ── Product IDs ────────────────────────────────────────────────────────────
@@ -64,8 +65,9 @@ class BillingService extends ChangeNotifier {
     // This covers: (a) signing in after purchasing Pro, (b) app restarts where
     // a previous sync was missed because they weren't signed in at purchase time.
     FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user != null && isPro) {
-        _syncPro(true);
+      if (user != null) {
+        if (isPro) _syncPro(true);
+        PhotoStorage.backfillRemoteUrls();
       }
     });
 

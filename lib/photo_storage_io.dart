@@ -110,6 +110,19 @@ class PhotoStorage {
     }
   }
 
+  /// Uploads any local photos that were saved before Firebase Storage was set up.
+  /// Runs silently in the background — safe to call every sign-in.
+  static Future<void> backfillRemoteUrls() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final all = await _loadAll();
+    for (final photo in all) {
+      if (photo.remoteUrl == null) {
+        unawaited(_uploadAndSync(photo));
+      }
+    }
+  }
+
   /// Convenience wrapper — on iOS/Android XFile always has a valid path.
   static Future<AppPhoto> addFromXFile({
     required String ownerType,
