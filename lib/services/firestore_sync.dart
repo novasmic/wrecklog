@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'error_service.dart';
 
 /// Called when Firestore has changes for a vehicle's parts.
 /// [vehicleId]      — which vehicle changed
@@ -52,9 +52,7 @@ class FirestoreSync {
         .snapshots()
         .listen(
           (snap) => _onVehiclesChanged(uid, snap),
-          onError: (e) {
-            if (kDebugMode) debugPrint('FirestoreSync vehicles error: $e');
-          },
+          onError: (e, st) => logError('FirestoreSync vehicles stream', e, st),
         );
   }
 
@@ -97,9 +95,7 @@ class FirestoreSync {
               .snapshots()
               .listen(
                 (partSnap) => _onPartsChanged(vehicleId, partSnap),
-                onError: (e) {
-                  if (kDebugMode) debugPrint('FirestoreSync parts[$vehicleId] error: $e');
-                },
+                onError: (e, st) => logError('FirestoreSync parts[$vehicleId] stream', e, st),
               );
         });
       }

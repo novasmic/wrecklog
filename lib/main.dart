@@ -27,6 +27,7 @@ import 'services/firestore_service.dart';
 import 'services/firestore_sync.dart';
 import 'services/storage_service.dart';
 import 'services/rating_service.dart';
+import 'services/error_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -316,7 +317,9 @@ class _AppShellState extends State<AppShell> {
         try {
           vehicle.parts.add(Part.fromJson(remoteJson));
           changed = true;
-        } catch (_) {}
+        } catch (e, st) {
+          logError('Part.fromJson (add from sync) partId=${remoteJson['id']}', e, st);
+        }
       } else {
         final local = vehicle.parts[localIdx];
         final localUpdatedMs = local.updatedAt?.millisecondsSinceEpoch;
@@ -328,7 +331,9 @@ class _AppShellState extends State<AppShell> {
           try {
             vehicle.parts[localIdx] = Part.fromJson(remoteJson);
             changed = true;
-          } catch (_) {}
+          } catch (e, st) {
+            logError('Part.fromJson (update from sync) partId=${remoteJson['id']}', e, st);
+          }
         }
       }
     }
@@ -364,7 +369,9 @@ class _AppShellState extends State<AppShell> {
           });
           setState(() => _vehicles[idx] = updated);
           _persist();
-        } catch (_) {}
+        } catch (e, st) {
+          logError('Vehicle.fromJson (metadata update) vehicleId=$vehicleId', e, st);
+        }
       }
     } else {
       // New vehicle not present locally — add it with empty parts for now.
@@ -373,7 +380,9 @@ class _AppShellState extends State<AppShell> {
         final vehicle = Vehicle.fromJson({...vehicleData, 'parts': []});
         setState(() => _vehicles.add(vehicle));
         _persist();
-      } catch (_) {}
+      } catch (e, st) {
+        logError('Vehicle.fromJson (new from sync) vehicleId=$vehicleId', e, st);
+      }
     }
   }
 
@@ -537,7 +546,9 @@ class _AppShellState extends State<AppShell> {
       }
       final restored = <Vehicle>[];
       for (final json in jsonList) {
-        try { restored.add(Vehicle.fromJson(json)); } catch (_) {}
+        try { restored.add(Vehicle.fromJson(json)); } catch (e, st) {
+          logError('Vehicle.fromJson (restore) vehicleId=${json['id']}', e, st);
+        }
       }
       await VehicleStore.saveVehicles(restored);
       if (!mounted) return;
@@ -572,7 +583,9 @@ class _AppShellState extends State<AppShell> {
       for (final json in jsonList) {
         final id = json['id'] as String?;
         if (id != null && !localIds.contains(id)) {
-          try { missing.add(Vehicle.fromJson(json)); } catch (_) {}
+          try { missing.add(Vehicle.fromJson(json)); } catch (e, st) {
+            logError('Vehicle.fromJson (merge) vehicleId=${json['id']}', e, st);
+          }
         }
       }
       if (missing.isEmpty || !mounted) return;

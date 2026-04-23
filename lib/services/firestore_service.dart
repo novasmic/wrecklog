@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../photo_storage_model.dart';
+import 'error_service.dart';
 
 /// Firestore structure:
 ///   users/{uid}/vehicles/{vehicleId}          — vehicle record
@@ -27,8 +28,8 @@ class FirestoreService {
         ..remove('parts') // parts stored in subcollection
         ..['syncedAt'] = FieldValue.serverTimestamp();
       await _vehiclesCol(uid).doc(id).set(data, SetOptions(merge: true));
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore upsertVehicle error: $e');
+    } catch (e, st) {
+      logError('Firestore upsertVehicle', e, st);
     }
   }
 
@@ -40,8 +41,8 @@ class FirestoreService {
         await doc.reference.delete();
       }
       await _vehiclesCol(uid).doc(vehicleId).delete();
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore deleteVehicle error: $e');
+    } catch (e, st) {
+      logError('Firestore deleteVehicle', e, st);
     }
   }
 
@@ -53,16 +54,16 @@ class FirestoreService {
       final data = Map<String, dynamic>.from(partJson)
         ..['syncedAt'] = FieldValue.serverTimestamp();
       await _partsCol(uid, vehicleId).doc(id).set(data, SetOptions(merge: true));
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore upsertPart error: $e');
+    } catch (e, st) {
+      logError('Firestore upsertPart', e, st);
     }
   }
 
   static Future<void> deletePart(String uid, String vehicleId, String partId) async {
     try {
       await _partsCol(uid, vehicleId).doc(partId).delete();
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore deletePart error: $e');
+    } catch (e, st) {
+      logError('Firestore deletePart', e, st);
     }
   }
 
@@ -74,8 +75,8 @@ class FirestoreService {
         'isPro': isPro,
         'proUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore updateUserPro error: $e');
+    } catch (e, st) {
+      logError('Firestore updateUserPro', e, st);
     }
   }
 
@@ -94,16 +95,16 @@ class FirestoreService {
         'remoteUrl': photo.remoteUrl,
         'createdAt': photo.createdAt,
       }, SetOptions(merge: true));
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore upsertPhotoMeta error: $e');
+    } catch (e, st) {
+      logError('Firestore upsertPhotoMeta', e, st);
     }
   }
 
   static Future<void> deletePhotoMeta(String uid, String photoId) async {
     try {
       await _photoMetaCol(uid).doc(photoId).delete();
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore deletePhotoMeta error: $e');
+    } catch (e, st) {
+      logError('Firestore deletePhotoMeta', e, st);
     }
   }
 
@@ -116,8 +117,8 @@ class FirestoreService {
         'email': email,
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore ensureUserProfile error: $e');
+    } catch (e, st) {
+      logError('Firestore ensureUserProfile', e, st);
     }
   }
 
@@ -177,8 +178,8 @@ class FirestoreService {
       );
 
       if (kDebugMode) debugPrint('Firestore migration complete for $uid');
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore migrateLocalData error: $e');
+    } catch (e, st) {
+      logError('Firestore migrateLocalData', e, st);
     }
   }
 
@@ -221,8 +222,8 @@ class FirestoreService {
       await _db.collection('users').doc(uid).delete();
 
       if (kDebugMode) debugPrint('Firestore: deleted all data for $uid');
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore deleteAllUserData error: $e');
+    } catch (e, st) {
+      logError('Firestore deleteAllUserData', e, st);
       rethrow;
     }
   }
@@ -255,8 +256,8 @@ class FirestoreService {
 
       if (kDebugMode) debugPrint('Firestore restore: ${result.length} vehicles');
       return result;
-    } catch (e) {
-      if (kDebugMode) debugPrint('Firestore restoreFromFirestore error: $e');
+    } catch (e, st) {
+      logError('Firestore restoreFromFirestore', e, st);
       return [];
     }
   }
