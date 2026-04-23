@@ -9532,6 +9532,11 @@ class _SettingsTabState extends State<SettingsTab> {
                   'Permanently deletes all vehicles, parts and photos from this device and the cloud. This cannot be undone.',
                   style: TextStyle(color: Colors.white38, fontSize: 12),
                 ),
+                const SizedBox(height: 8),
+                const Text(
+                  'To clear other devices: open the app on each one, go to Settings → Backup & Restore → Wipe everything.',
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                ),
               ],
             ),
           ),
