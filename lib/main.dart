@@ -345,10 +345,19 @@ class _AppShellState extends State<AppShell> {
     final v = await VehicleStore.loadVehicles();
     if (!mounted) return;
 
-    // If local is empty but user is already signed in, try restoring from cloud.
-    if (v.isEmpty && auth.uid != null) {
-      await _restoreFromCloud(auth.uid!);
-      return; // _restoreFromCloud sets state and handles navigation
+    // If local is empty, wait briefly for Firebase Auth to initialise before
+    // deciding whether to restore from cloud or redirect to landing screen.
+    // On a fresh install, authStateChanges fires within ~1-2 seconds.
+    if (v.isEmpty) {
+      final user = await FirebaseAuth.instance
+          .authStateChanges()
+          .first
+          .timeout(const Duration(seconds: 6), onTimeout: () => null);
+      if (!mounted) return;
+      if (user != null) {
+        await _restoreFromCloud(user.uid);
+        return;
+      }
     }
 
     setState(() {
