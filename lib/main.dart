@@ -357,6 +357,8 @@ class _AppShellState extends State<AppShell> {
     });
     // Migrate local data to Firestore on first signed-in launch.
     _maybeMigrateToFirestore(v);
+    // Merge any vehicles from Firestore that aren't in local storage.
+    _mergeMissingVehiclesFromCloud(v);
     // Show one-time web app promo bottom sheet.
     _maybeShowWebPromo();
     // Only redirect to landing on cold start — not when coming from LandingScreen
@@ -494,6 +496,36 @@ class _AppShellState extends State<AppShell> {
     } catch (e) {
       if (kDebugMode) debugPrint('_restoreFromCloud error: $e');
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // Fetches vehicles from Firestore and adds any that are missing locally.
+  // Runs in background — doesn't block UI. Handles the case where another
+  // device added vehicles that haven't reached this device yet.
+  Future<void> _mergeMissingVehiclesFromCloud(List<Vehicle> current) async {
+    final uid = auth.uid;
+    if (uid == null) return;
+    try {
+      final jsonList = await FirestoreService.restoreFromFirestore(uid);
+      if (jsonList.isEmpty || !mounted) return;
+
+      final localIds = current.map((v) => v.id).toSet();
+      final missing = <Vehicle>[];
+      for (final json in jsonList) {
+        final id = json['id'] as String?;
+        if (id != null && !localIds.contains(id)) {
+          try { missing.add(Vehicle.fromJson(json)); } catch (_) {}
+        }
+      }
+      if (missing.isEmpty || !mounted) return;
+
+      final merged = [..._vehicles, ...missing];
+      await VehicleStore.saveVehicles(merged);
+      if (!mounted) return;
+      setState(() => _vehicles = merged);
+      if (kDebugMode) debugPrint('Merged ${missing.length} missing vehicles from cloud');
+    } catch (e) {
+      if (kDebugMode) debugPrint('_mergeMissingVehiclesFromCloud error: $e');
     }
   }
 
