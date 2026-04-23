@@ -7,3 +7,5 @@ import 'package:flutter/material.dart';
 ImageProvider photoFileImage(String path) {
   throw UnsupportedError('FileImage not available on this platform.');
 }
+
+bool photoFileExists(String path) => false;

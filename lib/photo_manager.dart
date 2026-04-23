@@ -30,17 +30,23 @@ const int kMaxPartPhotos    = kMaxPhotosPerOwner;
 // Storage strategies:
 // - iOS/Android: files stored in app-specific documents directory
 // - Web: photos stored as base64 strings in local storage
+// - Cross-device: if local file missing but remoteUrl exists, use NetworkImage
 ImageProvider _imageProviderFor(AppPhoto photo) {
   if (kIsWeb) {
     try {
       return MemoryImage(base64Decode(photo.pathOrData));
     } on FormatException {
-      // Corrupted base64 — return a transparent placeholder so the widget
-      // falls through to its errorBuilder instead of crashing.
       return MemoryImage(Uint8List(0));
     }
   }
-  return photoFileImage(photo.pathOrData);
+  if (photoFileExists(photo.pathOrData)) {
+    return photoFileImage(photo.pathOrData);
+  }
+  // Photo was taken on another device — load from Firebase Storage.
+  if (photo.remoteUrl != null) {
+    return NetworkImage(photo.remoteUrl!);
+  }
+  return MemoryImage(Uint8List(0));
 }
 
 // ── PhotoStrip ────────────────────────────────────────────────────────────────

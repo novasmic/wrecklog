@@ -70,6 +70,7 @@ class BillingService extends ChangeNotifier {
         if (user != null) {
           if (isPro) _syncPro(true);
           PhotoStorage.backfillRemoteUrls();
+          PhotoStorage.cacheRemotePhotos();
           FirestoreSync.instance.start(user.uid);
         } else {
           FirestoreSync.instance.stop();

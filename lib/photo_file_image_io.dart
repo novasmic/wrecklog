@@ -5,3 +5,4 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 ImageProvider photoFileImage(String path) => FileImage(File(path));
+bool photoFileExists(String path) => File(path).existsSync();

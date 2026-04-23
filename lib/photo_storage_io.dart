@@ -123,6 +123,40 @@ class PhotoStorage {
     }
   }
 
+  /// Downloads any photos from other devices that aren't cached locally yet.
+  /// Called silently in the background — safe to call on every sign-in.
+  static Future<void> cacheRemotePhotos() async {
+    final all = await _loadAll();
+    for (final photo in all) {
+      if (photo.remoteUrl != null && !File(photo.pathOrData).existsSync()) {
+        unawaited(_downloadAndCache(photo));
+      }
+    }
+  }
+
+  static Future<void> _downloadAndCache(AppPhoto photo) async {
+    if (photo.remoteUrl == null) return;
+    try {
+      final client = HttpClient();
+      final request = await client.getUrl(Uri.parse(photo.remoteUrl!));
+      final response = await request.close();
+      if (response.statusCode != 200) return;
+
+      final bytes = <int>[];
+      await for (final chunk in response) {
+        bytes.addAll(chunk);
+      }
+      client.close();
+
+      final file = File(photo.pathOrData);
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(bytes);
+      if (kDebugMode) debugPrint('PhotoStorage: cached ${photo.id} locally');
+    } catch (e) {
+      if (kDebugMode) debugPrint('PhotoStorage: failed to cache ${photo.id}: $e');
+    }
+  }
+
   /// Convenience wrapper — on iOS/Android XFile always has a valid path.
   static Future<AppPhoto> addFromXFile({
     required String ownerType,
