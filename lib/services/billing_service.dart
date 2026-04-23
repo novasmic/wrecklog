@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -115,8 +116,7 @@ class BillingService extends ChangeNotifier {
       throw Exception('Monthly subscription not available. Please check your connection and try again.');
     }
     await AnalyticsService.logCheckoutStarted(kMonthlyId);
-    final param = PurchaseParam(productDetails: monthlyProduct!);
-    await _iap.buyNonConsumable(purchaseParam: param);
+    await _iap.buyNonConsumable(purchaseParam: _purchaseParam(monthlyProduct!));
   }
 
   Future<void> buyYearly() async {
@@ -124,8 +124,21 @@ class BillingService extends ChangeNotifier {
       throw Exception('Yearly subscription not available. Please check your connection and try again.');
     }
     await AnalyticsService.logCheckoutStarted(kYearlyId);
-    final param = PurchaseParam(productDetails: yearlyProduct!);
-    await _iap.buyNonConsumable(purchaseParam: param);
+    await _iap.buyNonConsumable(purchaseParam: _purchaseParam(yearlyProduct!));
+  }
+
+  // On Android, use GooglePlayPurchaseParam so the correct subscription offer
+  // is selected. On iOS, the base PurchaseParam is sufficient.
+  PurchaseParam _purchaseParam(ProductDetails product) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final androidProduct = product as GooglePlayProductDetails;
+      return GooglePlayPurchaseParam(
+        productDetails: product,
+        changeSubscriptionParam: null,
+        offerToken: androidProduct.offerToken,
+      );
+    }
+    return PurchaseParam(productDetails: product);
   }
 
   // Kept for any legacy call sites — routes to monthly.
