@@ -25,6 +25,7 @@ import 'services/facebook_service.dart';
 import 'services/analytics_service.dart';
 import 'services/firestore_service.dart';
 import 'services/firestore_sync.dart';
+import 'services/storage_service.dart';
 import 'services/rating_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9502,11 +9503,105 @@ class _SettingsTabState extends State<SettingsTab> {
               ],
             ),
           ),
+
+          // ── Danger zone ────────────────────────────────────────────
+          const SizedBox(height: 24),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.red),
+                    SizedBox(width: 10),
+                    Text('Danger Zone', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.red)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.delete_forever, color: Colors.red),
+                    label: const Text('Delete All My Data', style: TextStyle(color: Colors.red)),
+                    style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
+                    onPressed: () => _confirmDeleteAll(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Permanently deletes all vehicles, parts and photos from this device and the cloud. This cannot be undone.',
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
             ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDeleteAll(BuildContext context) async {
+    final confirm1 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete all data?'),
+        content: const Text(
+          'This will permanently delete ALL your vehicles, parts and photos — from this device and from the cloud.\n\nThis cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (confirm1 != true || !context.mounted) return;
+
+    final confirm2 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Are you absolutely sure?'),
+        content: const Text('There is no way to recover your data after this.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete Everything'),
+          ),
+        ],
+      ),
+    );
+    if (confirm2 != true || !context.mounted) return;
+
+    // Show loading.
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+    );
+
+    try {
+      final uid = auth.uid;
+      if (uid != null) {
+        await FirestoreService.deleteAllUserData(uid);
+        await StorageService.deleteAllUserPhotos(uid);
+      }
+      await widget.onWipeAll();
+    } catch (e) {
+      if (kDebugMode) debugPrint('Delete all data error: $e');
+    }
+
+    if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
   }
 }
 

@@ -188,6 +188,41 @@ class FirestoreService {
     }
   }
 
+  // ── Delete all — wipe everything from Firestore for a user ────────────────
+
+  /// Deletes all vehicles, parts, photoMeta, and the user profile document.
+  static Future<void> deleteAllUserData(String uid) async {
+    try {
+      // Delete all vehicles and their parts subcollections.
+      final vehicles = await _vehiclesCol(uid).get();
+      for (final vDoc in vehicles.docs) {
+        final parts = await _partsCol(uid, vDoc.id).get();
+        for (final pDoc in parts.docs) {
+          await pDoc.reference.delete();
+        }
+        await vDoc.reference.delete();
+      }
+
+      // Delete all photoMeta documents.
+      final photoMeta = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('photoMeta')
+          .get();
+      for (final doc in photoMeta.docs) {
+        await doc.reference.delete();
+      }
+
+      // Delete the user profile document.
+      await _db.collection('users').doc(uid).delete();
+
+      if (kDebugMode) debugPrint('Firestore: deleted all data for $uid');
+    } catch (e) {
+      if (kDebugMode) debugPrint('Firestore deleteAllUserData error: $e');
+      rethrow;
+    }
+  }
+
   // ── Restore — pull all cloud data down to a new/wiped device ──────────────
 
   /// Fetches all vehicles and their parts from Firestore.

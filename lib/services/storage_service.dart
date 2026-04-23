@@ -59,6 +59,34 @@ class StorageService {
     }
   }
 
+  /// Deletes all photos for a user from Firebase Storage.
+  static Future<void> deleteAllUserPhotos(String uid) async {
+    try {
+      final ref = _storage.ref('users/$uid/photos');
+      final result = await ref.listAll();
+      for (final item in result.items) {
+        await item.delete();
+      }
+      // Recurse into prefixes (subdirectories).
+      for (final prefix in result.prefixes) {
+        await _deletePrefix(prefix);
+      }
+      if (kDebugMode) debugPrint('StorageService: deleted all photos for $uid');
+    } catch (e) {
+      if (kDebugMode) debugPrint('StorageService: deleteAllUserPhotos error: $e');
+    }
+  }
+
+  static Future<void> _deletePrefix(Reference ref) async {
+    final result = await ref.listAll();
+    for (final item in result.items) {
+      await item.delete();
+    }
+    for (final prefix in result.prefixes) {
+      await _deletePrefix(prefix);
+    }
+  }
+
   /// Deletes a photo from Firebase Storage. Fails silently.
   static Future<void> deletePhoto({
     required String ownerType,
