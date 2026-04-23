@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
+import 'error_service.dart';
 
 class StorageService {
   static final _storage = FirebaseStorage.instance;
@@ -27,8 +28,8 @@ class StorageService {
         SettableMetadata(contentType: 'image/jpeg'),
       );
       return await ref.getDownloadURL();
-    } catch (e) {
-      if (kDebugMode) debugPrint('StorageService: upload failed for $photoId: $e');
+    } catch (e, st) {
+      logError('StorageService upload $photoId', e, st);
       return null;
     }
   }
@@ -53,8 +54,8 @@ class StorageService {
       }
 
       return Uint8List.fromList(img.encodeJpg(resized, quality: 80));
-    } catch (e) {
-      if (kDebugMode) debugPrint('StorageService: compression failed, using original: $e');
+    } catch (e, st) {
+      logError('StorageService compress', e, st);
       return File(localPath).readAsBytesSync();
     }
   }
@@ -72,8 +73,8 @@ class StorageService {
         await _deletePrefix(prefix);
       }
       if (kDebugMode) debugPrint('StorageService: deleted all photos for $uid');
-    } catch (e) {
-      if (kDebugMode) debugPrint('StorageService: deleteAllUserPhotos error: $e');
+    } catch (e, st) {
+      logError('StorageService deleteAllUserPhotos', e, st);
     }
   }
 
@@ -98,8 +99,8 @@ class StorageService {
     try {
       final ref = _storage.ref('users/$uid/photos/${ownerType}s/$ownerId/$photoId.jpg');
       await ref.delete();
-    } catch (e) {
-      if (kDebugMode) debugPrint('StorageService: delete failed for $photoId: $e');
+    } catch (e, st) {
+      logError('StorageService delete $photoId', e, st);
     }
   }
 }
