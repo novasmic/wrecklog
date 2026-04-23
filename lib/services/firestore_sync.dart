@@ -12,6 +12,16 @@ typedef FirestoreUpdateCallback = void Function({
   required List<String> deletedPartIds,
 });
 
+/// Called when a vehicle document is added or modified in Firestore.
+typedef FirestoreVehicleCallback = void Function({
+  required String vehicleId,
+  required Map<String, dynamic> vehicleData,
+  required bool isNew,
+});
+
+/// Called when a vehicle is deleted from Firestore.
+typedef FirestoreVehicleDeleteCallback = void Function(String vehicleId);
+
 /// Listens to Firestore in real-time and calls [callback] when parts change.
 /// Start it when the user signs in; stop it when they sign out.
 class FirestoreSync {
@@ -20,8 +30,10 @@ class FirestoreSync {
 
   static final _db = FirebaseFirestore.instance;
 
-  /// Set this before calling [start] so updates reach the UI.
+  /// Set these before calling [start] so updates reach the UI.
   FirestoreUpdateCallback? callback;
+  FirestoreVehicleCallback? vehicleCallback;
+  FirestoreVehicleDeleteCallback? vehicleDeleteCallback;
 
   StreamSubscription<QuerySnapshot>? _vehiclesSub;
   final Map<String, StreamSubscription<QuerySnapshot>> _partSubs = {};
@@ -50,7 +62,7 @@ class FirestoreSync {
     _active = false;
     _vehiclesSub?.cancel();
     _vehiclesSub = null;
-    for (final sub in _partSubs.values) sub.cancel();
+    for (final sub in _partSubs.values) { sub.cancel(); }
     _partSubs.clear();
   }
 
@@ -63,7 +75,17 @@ class FirestoreSync {
       if (change.type == DocumentChangeType.removed) {
         _partSubs[vehicleId]?.cancel();
         _partSubs.remove(vehicleId);
+        vehicleDeleteCallback?.call(vehicleId);
       } else {
+        final isNew = change.type == DocumentChangeType.added;
+        final data  = _sanitise(change.doc.data() as Map<String, dynamic>);
+        data['id']  = vehicleId;
+        vehicleCallback?.call(
+          vehicleId:   vehicleId,
+          vehicleData: data,
+          isNew:       isNew,
+        );
+
         // Attach a parts listener for this vehicle if not already watching it.
         _partSubs.putIfAbsent(vehicleId, () {
           return _db

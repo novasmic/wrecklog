@@ -128,8 +128,16 @@ class FirestoreService {
     List<Map<String, dynamic>> vehiclesJson,
   ) async {
     try {
-      final batch = _db.batch();
+      var batch = _db.batch();
       int ops = 0;
+
+      Future<void> maybeFlush() async {
+        if (ops >= 490) {
+          await batch.commit();
+          batch = _db.batch();
+          ops = 0;
+        }
+      }
 
       for (final vJson in vehiclesJson) {
         final vehicleId = vJson['id'] as String;
@@ -145,6 +153,7 @@ class FirestoreService {
           SetOptions(merge: true),
         );
         ops++;
+        await maybeFlush();
 
         for (final pJson in parts) {
           final partData = Map<String, dynamic>.from(pJson as Map<String, dynamic>)
@@ -155,12 +164,7 @@ class FirestoreService {
             SetOptions(merge: true),
           );
           ops++;
-
-          // Firestore batches are limited to 500 operations — commit and start fresh.
-          if (ops >= 490) {
-            await batch.commit();
-            ops = 0;
-          }
+          await maybeFlush();
         }
       }
 

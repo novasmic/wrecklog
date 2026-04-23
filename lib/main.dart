@@ -258,6 +258,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _tab = 0; // 0=home, 1=vehicles, 2=search, 3=stats, 4=settings;
   bool _loading = true;
+  bool _restoringFromCloud = false;
   List<Vehicle> _vehicles = [];
   Timer? _saveDebounce;
   StreamSubscription<dynamic>? _authSub;
@@ -265,7 +266,9 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
-    FirestoreSync.instance.callback = _onFirestoreUpdate;
+    FirestoreSync.instance.callback              = _onFirestoreUpdate;
+    FirestoreSync.instance.vehicleCallback       = _onFirestoreVehicle;
+    FirestoreSync.instance.vehicleDeleteCallback = _onFirestoreVehicleDeleted;
     _load();
     // If user signs in after load (e.g. on a new device with empty local DB),
     // trigger a cloud restore so their data appears without reopening the app.
@@ -280,7 +283,9 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     _saveDebounce?.cancel();
     _authSub?.cancel();
-    FirestoreSync.instance.callback = null;
+    FirestoreSync.instance.callback              = null;
+    FirestoreSync.instance.vehicleCallback       = null;
+    FirestoreSync.instance.vehicleDeleteCallback = null;
     super.dispose();
   }
 
@@ -338,6 +343,46 @@ class _AppShellState extends State<AppShell> {
       setState(() {});
       _persist();
     }
+  }
+
+  // Handles vehicle add/modify from Firestore real-time listener.
+  // Updates metadata on existing vehicles; adds new ones that aren't local yet.
+  void _onFirestoreVehicle({
+    required String vehicleId,
+    required Map<String, dynamic> vehicleData,
+    required bool isNew,
+  }) {
+    if (!mounted) return;
+    final idx = _vehicles.indexWhere((v) => v.id == vehicleId);
+    if (idx >= 0) {
+      if (!isNew) {
+        // Update existing vehicle metadata, preserving local parts.
+        try {
+          final updated = Vehicle.fromJson({
+            ...vehicleData,
+            'parts': _vehicles[idx].parts.map((p) => p.toJson()).toList(),
+          });
+          setState(() => _vehicles[idx] = updated);
+          _persist();
+        } catch (_) {}
+      }
+    } else {
+      // New vehicle not present locally — add it with empty parts for now.
+      // Parts arrive shortly after via the parts listener.
+      try {
+        final vehicle = Vehicle.fromJson({...vehicleData, 'parts': []});
+        setState(() => _vehicles.add(vehicle));
+        _persist();
+      } catch (_) {}
+    }
+  }
+
+  // Handles vehicle deletion from Firestore real-time listener.
+  void _onFirestoreVehicleDeleted(String vehicleId) {
+    if (!mounted) return;
+    final before = _vehicles.length;
+    setState(() => _vehicles.removeWhere((v) => v.id == vehicleId));
+    if (_vehicles.length != before) _persist();
   }
 
   Future<void> _load() async {
@@ -480,12 +525,14 @@ class _AppShellState extends State<AppShell> {
   // Fetches all vehicles + parts from Firestore and saves them locally.
   // Called when a user signs into a new/wiped device with an empty local DB.
   Future<void> _restoreFromCloud(String uid) async {
-    if (!mounted) return;
+    if (!mounted || _restoringFromCloud) return;
+    _restoringFromCloud = true;
     setState(() => _loading = true);
     try {
       final jsonList = await FirestoreService.restoreFromFirestore(uid);
       if (jsonList.isEmpty || !mounted) {
         setState(() => _loading = false);
+        _restoringFromCloud = false;
         return;
       }
       final restored = <Vehicle>[];
@@ -498,6 +545,7 @@ class _AppShellState extends State<AppShell> {
         _vehicles = restored;
         _loading = false;
       });
+      _restoringFromCloud = false;
       // Navigate away from landing screen if it's showing.
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).popUntil((r) => r.isFirst);
@@ -505,6 +553,7 @@ class _AppShellState extends State<AppShell> {
     } catch (e) {
       if (kDebugMode) debugPrint('_restoreFromCloud error: $e');
       if (mounted) setState(() => _loading = false);
+      _restoringFromCloud = false;
     }
   }
 
