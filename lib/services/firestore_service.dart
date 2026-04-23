@@ -187,4 +187,58 @@ class FirestoreService {
       return false;
     }
   }
+
+  // ── Restore — pull all cloud data down to a new/wiped device ──────────────
+
+  /// Fetches all vehicles and their parts from Firestore.
+  /// Returns a list of vehicle JSON maps (each with a nested 'parts' list),
+  /// ready to pass to Vehicle.fromJson(). Returns empty list on failure.
+  static Future<List<Map<String, dynamic>>> restoreFromFirestore(String uid) async {
+    try {
+      final vehiclesSnap = await _vehiclesCol(uid).get();
+      if (vehiclesSnap.docs.isEmpty) return [];
+
+      final result = <Map<String, dynamic>>[];
+      for (final vDoc in vehiclesSnap.docs) {
+        final vehicleData = _stripTimestamps(vDoc.data());
+        vehicleData['id'] = vDoc.id;
+
+        final partsSnap = await _partsCol(uid, vDoc.id).get();
+        final parts = <Map<String, dynamic>>[];
+        for (final pDoc in partsSnap.docs) {
+          final partData = _stripTimestamps(pDoc.data());
+          partData['id'] = pDoc.id;
+          parts.add(partData);
+        }
+        vehicleData['parts'] = parts;
+        result.add(vehicleData);
+      }
+
+      if (kDebugMode) debugPrint('Firestore restore: ${result.length} vehicles');
+      return result;
+    } catch (e) {
+      if (kDebugMode) debugPrint('Firestore restoreFromFirestore error: $e');
+      return [];
+    }
+  }
+
+  static Map<String, dynamic> _stripTimestamps(Map<String, dynamic> data) {
+    final result = <String, dynamic>{};
+    for (final entry in data.entries) {
+      final v = entry.value;
+      if (v is Timestamp) continue; // drop server timestamps
+      if (v is Map) {
+        result[entry.key] = _stripTimestamps(Map<String, dynamic>.from(v));
+      } else if (v is List) {
+        result[entry.key] = v
+            .whereType<Object>()
+            .where((e) => e is! Timestamp)
+            .map((e) => e is Map ? _stripTimestamps(Map<String, dynamic>.from(e)) : e)
+            .toList();
+      } else {
+        result[entry.key] = v;
+      }
+    }
+    return result;
+  }
 }

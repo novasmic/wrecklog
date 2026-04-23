@@ -26,6 +26,7 @@ import 'services/analytics_service.dart';
 import 'services/firestore_service.dart';
 import 'services/firestore_sync.dart';
 import 'services/rating_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'firebase_options.dart';
@@ -258,17 +259,26 @@ class _AppShellState extends State<AppShell> {
   bool _loading = true;
   List<Vehicle> _vehicles = [];
   Timer? _saveDebounce;
+  StreamSubscription<dynamic>? _authSub;
 
   @override
   void initState() {
     super.initState();
     FirestoreSync.instance.callback = _onFirestoreUpdate;
     _load();
+    // If user signs in after load (e.g. on a new device with empty local DB),
+    // trigger a cloud restore so their data appears without reopening the app.
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null && _vehicles.isEmpty && mounted) {
+        _restoreFromCloud(user.uid);
+      }
+    });
   }
 
   @override
   void dispose() {
     _saveDebounce?.cancel();
+    _authSub?.cancel();
     FirestoreSync.instance.callback = null;
     super.dispose();
   }
@@ -333,6 +343,13 @@ class _AppShellState extends State<AppShell> {
     setState(() => _loading = true);
     final v = await VehicleStore.loadVehicles();
     if (!mounted) return;
+
+    // If local is empty but user is already signed in, try restoring from cloud.
+    if (v.isEmpty && auth.uid != null) {
+      await _restoreFromCloud(auth.uid!);
+      return; // _restoreFromCloud sets state and handles navigation
+    }
+
     setState(() {
       _vehicles = v;
       _loading = false;
@@ -446,6 +463,37 @@ class _AppShellState extends State<AppShell> {
     final json = vehicles.map((v) => v.toJson()).toList();
     await FirestoreService.migrateLocalData(uid, json);
     await prefs.setInt('firestore_sync_version', kFirestoreSyncVersion);
+  }
+
+  // Fetches all vehicles + parts from Firestore and saves them locally.
+  // Called when a user signs into a new/wiped device with an empty local DB.
+  Future<void> _restoreFromCloud(String uid) async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final jsonList = await FirestoreService.restoreFromFirestore(uid);
+      if (jsonList.isEmpty || !mounted) {
+        setState(() => _loading = false);
+        return;
+      }
+      final restored = <Vehicle>[];
+      for (final json in jsonList) {
+        try { restored.add(Vehicle.fromJson(json)); } catch (_) {}
+      }
+      await VehicleStore.saveVehicles(restored);
+      if (!mounted) return;
+      setState(() {
+        _vehicles = restored;
+        _loading = false;
+      });
+      // Navigate away from landing screen if it's showing.
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).popUntil((r) => r.isFirst);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('_restoreFromCloud error: $e');
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   // Debounced save — batches rapid successive changes (e.g. adding many parts)
