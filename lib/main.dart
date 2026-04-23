@@ -457,7 +457,7 @@ class _AppShellState extends State<AppShell> {
 
     // Version-based re-sync — bump kFirestoreSyncVersion when a full
     // re-sync is needed (e.g. after fixing a sync bug).
-    const kFirestoreSyncVersion = 2;
+    const kFirestoreSyncVersion = 3;
     final prefs = await SharedPreferences.getInstance();
     final lastSync = prefs.getInt('firestore_sync_version') ?? 0;
     if (lastSync >= kFirestoreSyncVersion) return;
