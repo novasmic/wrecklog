@@ -67,75 +67,80 @@ class _GridButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF252525), Color(0xFF1A1A1A)],
-            ),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF252525), Color(0xFF1A1A1A)],
           ),
-          child: Row(
-            children: [
-              // Orange accent bar on left
-              Container(
-                width: 4,
-                height: 64,
-                decoration: const BoxDecoration(
-                  borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFFE8700A), Color(0xFFC45A06)],
+          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              splashColor: const Color(0xFFE8700A).withValues(alpha: 0.12),
+              highlightColor: const Color(0xFFE8700A).withValues(alpha: 0.06),
+              child: Row(
+                children: [
+                  // Orange accent bar on left
+                  Container(
+                    width: 3,
+                    height: 48,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFFE8700A), Color(0xFFC45A06)],
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 14),
+                  // Icon in circle
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFE8700A).withValues(alpha: 0.12),
+                    ),
+                    child: Icon(icon, color: const Color(0xFFE8700A), size: 18),
+                  ),
+                  const SizedBox(width: 14),
+                  // Label
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  const Spacer(),
+                  // Chevron
+                  Icon(
+                    Icons.chevron_right,
+                    color: Colors.white.withValues(alpha: 0.25),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 14),
+                ],
               ),
-              const SizedBox(width: 16),
-              // Icon in circle
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFE8700A).withValues(alpha: 0.12),
-                ),
-                child: Icon(icon, color: const Color(0xFFE8700A), size: 24),
-              ),
-              const SizedBox(width: 16),
-              // Label
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              const Spacer(),
-              // Chevron
-              Icon(
-                Icons.chevron_right,
-                color: Colors.white.withValues(alpha: 0.25),
-                size: 20,
-              ),
-              const SizedBox(width: 16),
-            ],
+            ),
           ),
         ),
       ),
@@ -237,19 +242,19 @@ class HomeScreen extends StatelessWidget {
                         label: 'Add Vehicle',
                         onTap: onAddVehicle,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       _GridButton(
                         icon: Icons.directions_car_outlined,
                         label: 'View Vehicles',
                         onTap: onViewVehicles,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       _GridButton(
                         icon: Icons.search,
                         label: 'Search Parts',
                         onTap: onSearchParts,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       _GridButton(
                         icon: Icons.bar_chart_rounded,
                         label: 'Stats',
