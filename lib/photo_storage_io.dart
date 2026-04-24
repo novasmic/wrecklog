@@ -122,7 +122,8 @@ class PhotoStorage {
     final all = await _loadAll();
     for (final photo in all) {
       if (photo.remoteUrl == null) {
-        unawaited(_uploadAndSync(photo));
+        // Sequential — avoids concurrent decompress/compress OOM on iOS.
+        await _uploadAndSync(photo);
       } else {
         // Photo already in Storage — make sure Firestore photoMeta exists.
         unawaited(FirestoreService.upsertPhotoMeta(uid, photo));
