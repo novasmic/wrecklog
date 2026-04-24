@@ -9623,6 +9623,8 @@ class _SettingsTabState extends State<SettingsTab> {
                 ),
                 const SizedBox(height: 6),
                 const _InfoRow(label: 'Build', value: 'Release 1'),
+                const SizedBox(height: 6),
+                _PhotoSyncRow(),
               ],
             ),
           ),
@@ -10572,6 +10574,87 @@ class _InfoRow extends StatelessWidget {
                 color: Colors.white,
                 fontSize: 13,
                 fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+class _PhotoSyncRow extends StatefulWidget {
+  @override
+  State<_PhotoSyncRow> createState() => _PhotoSyncRowState();
+}
+
+class _PhotoSyncRowState extends State<_PhotoSyncRow> {
+  String _status = '';
+  bool _running = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final all = await PhotoStorage.loadAll();
+    final pending = all.where((p) => p.remoteUrl == null).length;
+    final err = StorageService.lastUploadError;
+    if (mounted) {
+      setState(() {
+        if (err != null) {
+          _status = 'Error: $err';
+        } else if (pending > 0) {
+          _status = '$pending photo${pending == 1 ? '' : 's'} pending upload';
+        } else {
+          _status = 'All photos synced';
+        }
+      });
+    }
+  }
+
+  Future<void> _sync() async {
+    setState(() { _running = true; _status = 'Uploading…'; });
+    await PhotoStorage.backfillRemoteUrls();
+    await Future<void>.delayed(const Duration(seconds: 3));
+    await _refresh();
+    setState(() => _running = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Photo Sync',
+                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+              Text(_status,
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: _status.startsWith('Error')
+                          ? Colors.redAccent
+                          : _status == 'All photos synced'
+                              ? Colors.green
+                              : Colors.orange)),
+            ],
+          ),
+        ),
+        if (_running)
+          const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2))
+        else
+          GestureDetector(
+            onTap: _sync,
+            child: const Text('Sync now',
+                style: TextStyle(
+                    color: Color(0xFFE8700A),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+          ),
       ],
     );
   }

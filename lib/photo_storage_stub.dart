@@ -37,4 +37,8 @@ class PhotoStorage {
       throw UnsupportedError('Photo storage not supported on this platform.');
 
   static Future<void> wipeAll() async {}
+
+  static Future<void> backfillRemoteUrls() async {}
+
+  static Future<void> cacheRemotePhotos() async {}
 }

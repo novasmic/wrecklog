@@ -106,12 +106,14 @@ class PhotoStorage {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      unawaited(FirestoreService.upsertPhotoMeta(uid, updated));
+      await FirestoreService.upsertPhotoMeta(uid, updated);
     }
   }
 
-  /// Uploads any local photos that were saved before Firebase Storage was set up.
-  /// Runs silently in the background — safe to call every sign-in.
+  /// Uploads any local photos that were saved before Firebase Storage was set up,
+  /// and ensures every photo with a remoteUrl has a matching Firestore photoMeta
+  /// record (covers photos uploaded by older app versions that skipped that step).
+  /// Safe to call every sign-in.
   static Future<void> backfillRemoteUrls() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -119,6 +121,9 @@ class PhotoStorage {
     for (final photo in all) {
       if (photo.remoteUrl == null) {
         unawaited(_uploadAndSync(photo));
+      } else {
+        // Photo already in Storage — make sure Firestore photoMeta exists.
+        unawaited(FirestoreService.upsertPhotoMeta(uid, photo));
       }
     }
   }
