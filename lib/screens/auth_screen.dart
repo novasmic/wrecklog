@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../app_services.dart';
+import '../services/analytics_service.dart';
 import '../services/auth_service.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -36,6 +38,7 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       if (_isLogin) {
         await auth.signIn(_emailCtrl.text.trim(), _passwordCtrl.text);
+        unawaited(AnalyticsService.logSignIn());
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Welcome back!')),
@@ -44,6 +47,7 @@ class _AuthScreenState extends State<AuthScreen> {
         }
       } else {
         await auth.register(_emailCtrl.text.trim(), _passwordCtrl.text);
+        unawaited(AnalyticsService.logSignIn());
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Account created! Your data will now sync across devices.')),

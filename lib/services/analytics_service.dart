@@ -129,4 +129,42 @@ class AnalyticsService {
       if (kDebugMode) debugPrint('Analytics logUserRating error: $e');
     }
   }
+
+  static Future<void> logSignIn() async {
+    try {
+      await _analytics.logLogin(loginMethod: 'email');
+    } catch (e) {
+      if (kDebugMode) debugPrint('Analytics logSignIn error: $e');
+    }
+  }
+
+  static Future<void> logPhotoAdded(String ownerType) async {
+    try {
+      await _analytics.logEvent(
+        name: 'photo_added',
+        parameters: {'owner_type': ownerType},
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('Analytics logPhotoAdded error: $e');
+    }
+  }
+
+  static Future<void> logProGranted(String source) async {
+    try {
+      await _analytics.logEvent(
+        name: 'pro_granted',
+        parameters: {'source': source},
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('Analytics logProGranted error: $e');
+    }
+  }
+
+  static Future<void> logProRevoked() async {
+    try {
+      await _analytics.logEvent(name: 'pro_revoked');
+    } catch (e) {
+      if (kDebugMode) debugPrint('Analytics logProRevoked error: $e');
+    }
+  }
 }

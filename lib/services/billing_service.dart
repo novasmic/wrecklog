@@ -181,6 +181,7 @@ class BillingService extends ChangeNotifier {
     await prefs.setBool(_kProKey, true);
     notifyListeners();
     _syncPro(true);
+    unawaited(AnalyticsService.logProGranted('iap'));
   }
 
   Future<void> _revokePro() async {
@@ -190,6 +191,7 @@ class BillingService extends ChangeNotifier {
     await prefs.setBool(_kProKey, false);
     notifyListeners();
     _syncPro(false);
+    unawaited(AnalyticsService.logProRevoked());
   }
 
   void _syncPro(bool value) {

@@ -26,6 +26,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'photo_storage_model.dart';
+import 'services/analytics_service.dart';
 import 'services/firestore_service.dart';
 import 'services/storage_service.dart';
 export 'photo_storage_model.dart';
@@ -75,6 +76,7 @@ class PhotoStorage {
 
     // Background upload — don't block the caller.
     unawaited(_uploadAndSync(photo));
+    unawaited(AnalyticsService.logPhotoAdded(ownerType));
 
     return photo;
   }
