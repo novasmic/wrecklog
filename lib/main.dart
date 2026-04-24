@@ -682,6 +682,16 @@ class _AppShellState extends State<AppShell> {
     if (_tab == 0) {
       return HomeScreen(
         onAddVehicle:   () async {
+          if (!isPro && _vehicles.length >= kFreeVehicleLimit) {
+            await showRatingDialog(context);
+            if (!context.mounted) return;
+            await showProPaywall(
+              context,
+              title: 'Free limit reached',
+              message: 'Free WreckLog is limited to $kFreeVehicleLimit vehicle. Upgrade to Pro for unlimited vehicles and parts.',
+            );
+            return;
+          }
           final created = await Navigator.of(context).push<Vehicle>(
             MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
           );
@@ -4436,7 +4446,17 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     });
   }
 
-  void _duplicatePart(Part source) {
+  Future<void> _duplicatePart(Part source) async {
+    if (!isPro && _v.parts.length >= kFreePartLimitPerVehicle) {
+      await showRatingDialog(context);
+      if (!mounted) return;
+      await showProPaywall(
+        context,
+        title: 'Free parts limit reached',
+        message: 'Free WreckLog allows $kFreePartLimitPerVehicle parts per vehicle. Upgrade to Pro for unlimited parts.',
+      );
+      return;
+    }
     final copy = Part(
       id: newId(),
       name: source.name,
@@ -4737,7 +4757,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
                         onMarkScrapped: () => _setScrapped(p),
                         onMarkInStock: () => _setInStock(p),
                         onOpenLinks: () => showLinksSheet(context, p),
-                        onDuplicate: () => _duplicatePart(p),
+                        onDuplicate: () async => _duplicatePart(p),
                       ),
                       if (_selectMode)
                         Positioned(
