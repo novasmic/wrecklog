@@ -28,6 +28,7 @@ import 'services/firestore_sync.dart';
 import 'services/storage_service.dart';
 import 'services/rating_service.dart';
 import 'services/error_service.dart';
+import 'services/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -109,6 +110,7 @@ Future<void> main() async {
 
   await billing.init();
   await MigrationService.runIfNeeded();
+  await NotificationService.init();
   if (kDebugMode) await _loadDebugProFlag();
   runApp(const WreckLogApp());
 }
@@ -271,6 +273,12 @@ class _AppShellState extends State<AppShell> {
     FirestoreSync.instance.vehicleCallback       = _onFirestoreVehicle;
     FirestoreSync.instance.vehicleDeleteCallback = _onFirestoreVehicleDeleted;
     _load();
+    if (!kIsWeb) {
+      NotificationService.scheduleRetentionNudge();
+      Future.delayed(const Duration(seconds: 10), () {
+        if (mounted) NotificationService.requestPermission();
+      });
+    }
     // If user signs in after load (e.g. on a new device with empty local DB),
     // trigger a cloud restore so their data appears without reopening the app.
     _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
