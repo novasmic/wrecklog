@@ -120,6 +120,9 @@ class StorageService {
     try {
       final ref = _storage.ref('users/$uid/photos/${ownerType}s/$ownerId/$photoId.jpg');
       await ref.delete();
+    } on FirebaseException catch (e) {
+      if (e.code == 'object-not-found') return; // already deleted or never uploaded
+      logError('StorageService delete $photoId', e, null);
     } catch (e, st) {
       logError('StorageService delete $photoId', e, st);
     }
