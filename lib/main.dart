@@ -18,7 +18,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'landing_screen.dart';
 import 'app_services.dart';
 import 'screens/auth_screen.dart';
 import 'services/facebook_service.dart';
@@ -248,11 +247,7 @@ class WreckLogApp extends StatelessWidget {
 /// App Shell (Tabs)
 /// ----------------------------
 class AppShell extends StatefulWidget {
-  /// When true, skip the empty→landing redirect in _load().
-  /// Set this when navigating here from LandingScreen so we don't
-  /// immediately bounce back before the user has added anything.
-  final bool allowEmpty;
-  const AppShell({super.key, this.allowEmpty = false});
+  const AppShell({super.key});
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -432,29 +427,38 @@ class _AppShellState extends State<AppShell> {
     _mergeMissingVehiclesFromCloud(v);
     // Show one-time web app promo bottom sheet.
     _maybeShowWebPromo();
-    // Only redirect to landing on cold start — not when coming from LandingScreen
-    if (v.isEmpty && mounted && !widget.allowEmpty) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LandingScreen()),
-      );
-      return;
+    if (v.isEmpty && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _promptAddOrDemo());
     }
-    // New user coming from LandingScreen with no vehicles — skip home, go straight
-    // to Add Vehicle so they reach their first value moment immediately.
-    if (v.isEmpty && mounted && widget.allowEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted) return;
-        final created = await Navigator.of(context).push<Vehicle>(
-          MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
-        );
-        if (created == null || !mounted) return;
-        await _addVehicle(created);
-        if (!mounted) return;
-        final updated = await Navigator.of(context).push<Vehicle>(
-          MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: _vehicles)),
-        );
-        if (updated != null && mounted) await _updateVehicle(updated);
-      });
+  }
+
+  Future<void> _promptAddOrDemo() async {
+    if (!mounted) return;
+    final created = await Navigator.of(context).push<Vehicle>(
+      MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
+    );
+    if (!mounted) return;
+    if (created != null) {
+      await _addVehicle(created);
+      final updated = await Navigator.of(context).push<Vehicle>(
+        MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: _vehicles)),
+      );
+      if (updated != null && mounted) await _updateVehicle(updated);
+    } else {
+      // User skipped — create a demo vehicle so the app isn't empty.
+      final demo = Vehicle(
+        id: newId(),
+        make: 'Toyota',
+        model: 'Hilux',
+        year: 2019,
+        itemType: ItemType.car,
+        status: VehicleStatus.stripping,
+        acquiredAt: DateTime.now(),
+        parts: [],
+        color: 'White',
+        createdAt: DateTime.now(),
+      );
+      await _addVehicle(demo);
     }
   }
 
@@ -666,11 +670,8 @@ class _AppShellState extends State<AppShell> {
       setState(() => _vehicles.removeWhere((x) => x.id == id));
       await _persist();
       if (auth.uid != null) FirestoreService.deleteVehicle(auth.uid!, id);
-      // Last vehicle deleted → go back to landing immediately
       if (_vehicles.isEmpty && mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LandingScreen()),
-        );
+        _promptAddOrDemo();
       }
     } catch (e) {
       if (mounted) {
