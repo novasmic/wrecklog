@@ -442,6 +442,7 @@ class _AppShellState extends State<AppShell> {
     if (!mounted) return;
     if (created != null) {
       await _addVehicle(created);
+      if (!mounted) return;
       final updated = await Navigator.of(context).push<Vehicle>(
         MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: _vehicles)),
       );
