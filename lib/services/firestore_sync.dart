@@ -40,6 +40,7 @@ class FirestoreSync {
   StreamSubscription<QuerySnapshot>? _photoMetaSub;
   final Map<String, StreamSubscription<QuerySnapshot>> _partSubs = {};
   bool _active = false;
+  bool _photoMetaReady = false; // skips initial snapshot's 'added' events
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ class FirestoreSync {
 
   void stop() {
     _active = false;
+    _photoMetaReady = false;
     _vehiclesSub?.cancel();
     _vehiclesSub = null;
     _photoMetaSub?.cancel();
@@ -81,9 +83,40 @@ class FirestoreSync {
   // ── PhotoMeta listener ──────────────────────────────────────────────────────
 
   void _onPhotoMetaChanged(QuerySnapshot snap) {
+    if (!_photoMetaReady) {
+      // Skip 'added' events on the initial snapshot — existing photos are
+      // already handled by cacheRemotePhotos on sign-in. Only process
+      // deletions from the initial snapshot in case something was removed
+      // while the app was offline.
+      _photoMetaReady = true;
+      for (final change in snap.docChanges) {
+        if (change.type == DocumentChangeType.removed) {
+          PhotoStorage.deleteLocalById(change.doc.id);
+        }
+      }
+      return;
+    }
+
     for (final change in snap.docChanges) {
       if (change.type == DocumentChangeType.removed) {
         PhotoStorage.deleteLocalById(change.doc.id);
+      } else if (change.type == DocumentChangeType.added) {
+        // New photo added from another device (e.g. web) — cache it locally.
+        final data = change.doc.data() as Map<String, dynamic>;
+        final photoId   = data['id']        as String? ?? change.doc.id;
+        final ownerType = data['ownerType'] as String?;
+        final ownerId   = data['ownerId']   as String?;
+        final remoteUrl = data['remoteUrl'] as String?;
+        final createdAt = data['createdAt'] as int?    ?? DateTime.now().millisecondsSinceEpoch;
+        if (ownerType != null && ownerId != null && remoteUrl != null) {
+          PhotoStorage.cacheFromRemote(
+            photoId:   photoId,
+            ownerType: ownerType,
+            ownerId:   ownerId,
+            remoteUrl: remoteUrl,
+            createdAt: createdAt,
+          );
+        }
       }
     }
   }

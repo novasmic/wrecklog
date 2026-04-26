@@ -174,6 +174,36 @@ class PhotoStorage {
     );
   }
 
+  /// Called when a new photoMeta doc is added from another device (e.g. web).
+  /// Creates a local metadata entry and downloads the file in the background.
+  /// Safe to call repeatedly — skips if the photo already exists locally.
+  static Future<void> cacheFromRemote({
+    required String photoId,
+    required String ownerType,
+    required String ownerId,
+    required String remoteUrl,
+    required int createdAt,
+  }) async {
+    final all = await _loadAll();
+    if (all.any((ph) => ph.id == photoId)) return;
+
+    final dir = await _photoDir(ownerType, ownerId);
+    await dir.create(recursive: true);
+    final localPath = p.join(dir.path, '$photoId.jpg');
+
+    final photo = AppPhoto(
+      id:         photoId,
+      ownerType:  ownerType,
+      ownerId:    ownerId,
+      createdAt:  createdAt,
+      pathOrData: localPath,
+      remoteUrl:  remoteUrl,
+    );
+    all.add(photo);
+    await _saveAll(all);
+    unawaited(_downloadAndCache(photo));
+  }
+
   // ── Delete single ─────────────────────────────────────────────────────────
 
   /// Deletes a local photo by ID only — used when a real-time Firestore
