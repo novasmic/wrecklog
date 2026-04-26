@@ -112,56 +112,18 @@ class PhotoStorage {
     }
   }
 
-  /// Syncs local photos against Firestore and Storage on every sign-in:
-  /// - Photos deleted from the web (gone from Firestore photoMeta) → delete locally.
-  /// - Local photos with no remoteUrl → upload to Storage + write photoMeta.
-  /// - Local photos with a stale remoteUrl (Storage 404) → re-upload.
-  /// - Local photos fully synced → ensure Firestore photoMeta exists.
+  /// Uploads any local photos that haven't been synced yet.
+  /// Web deletions are now handled in real-time by FirestoreSync._onPhotoMetaChanged,
+  /// so this only needs to handle the upload direction.
   static Future<void> backfillRemoteUrls() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final all = await _loadAll();
-
-    // Fetch all photo IDs in Firestore once — used to detect web deletions.
-    // null means the fetch failed (network error) — skip deletion to avoid
-    // wiping local photos when offline.
-    final remoteIds = await FirestoreService.getPhotoMetaIds(uid);
-
     for (final photo in all) {
-      if (remoteIds != null && photo.remoteUrl != null && !remoteIds.contains(photo.id)) {
-        // Deleted from web — remove local copy only.
-        await _deleteLocalOnly(photo);
-      } else if (photo.remoteUrl == null) {
+      if (photo.remoteUrl == null) {
         // Never uploaded — upload now (sequential to avoid OOM on iOS).
         await _uploadAndSync(photo);
-      } else if (remoteIds != null && remoteIds.contains(photo.id)) {
-        // Confirmed in Firestore — Storage and photoMeta both exist. Skip.
-      } else if (await _isRemoteUrlStale(photo.remoteUrl!)) {
-        // Firestore state unknown + stale URL — re-upload.
-        final stale = AppPhoto(
-          id: photo.id, ownerType: photo.ownerType, ownerId: photo.ownerId,
-          createdAt: photo.createdAt, pathOrData: photo.pathOrData,
-          remoteUrl: null,
-        );
-        await _uploadAndSync(stale);
-      } else {
-        // Firestore state unknown + URL OK — write photoMeta as safety net.
-        unawaited(FirestoreService.upsertPhotoMeta(uid, photo));
       }
-    }
-  }
-
-  /// Returns true if the remote URL returns a 404/403, meaning the file is
-  /// gone from Storage and needs to be re-uploaded.
-  static Future<bool> _isRemoteUrlStale(String url) async {
-    try {
-      final client = HttpClient();
-      final request = await client.headUrl(Uri.parse(url));
-      final response = await request.close();
-      client.close();
-      return response.statusCode == 404 || response.statusCode == 403;
-    } catch (_) {
-      return false; // network error — assume OK, don't re-upload
     }
   }
 
@@ -213,12 +175,6 @@ class PhotoStorage {
   }
 
   // ── Delete single ─────────────────────────────────────────────────────────
-  static Future<void> _deleteLocalOnly(AppPhoto photo) async {
-    final all = await _loadAll();
-    all.removeWhere((ph) => ph.id == photo.id);
-    await _saveAll(all);
-    _deleteFile(photo.pathOrData);
-  }
 
   /// Deletes a local photo by ID only — used when a real-time Firestore
   /// listener detects the photoMeta doc was removed remotely.
