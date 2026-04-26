@@ -3,6 +3,7 @@
 // No dart:io here. Platform storage handled via photo_storage.dart.
 // FileImage handled via photo_file_image.dart conditional import.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -69,11 +70,19 @@ class PhotoStrip extends StatefulWidget {
 class _PhotoStripState extends State<PhotoStrip> {
   List<AppPhoto> _photos = [];
   bool _loading = true;
+  StreamSubscription<void>? _remoteSub;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _remoteSub = PhotoStorage.remoteChanges.listen((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _remoteSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {

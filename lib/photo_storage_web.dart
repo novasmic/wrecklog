@@ -3,6 +3,7 @@
 // No dart:io, no filesystem, no path_provider.
 // Never imported directly — used via photo_storage.dart conditional export.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
@@ -25,6 +26,9 @@ String _ownerKey(String ownerType, String ownerId) =>
 const String _kIndexKey = 'wrecklog_photos_web_index_v1';
 
 class PhotoStorage {
+  // ── Remote-change stream (no-op on web — web is the source of uploads) ────
+  static Stream<void> get remoteChanges => const Stream<void>.empty();
+
   // ── Read ──────────────────────────────────────────────────────────────────
   static Future<List<AppPhoto>> forOwner(
       String ownerType, String ownerId) async {

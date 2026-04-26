@@ -35,6 +35,12 @@ export 'photo_storage_model.dart';
 const String _kLegacyPrefsKey = 'wrecklog_photos_v1';
 
 class PhotoStorage {
+  // ── Remote-change stream ──────────────────────────────────────────────────
+  // Fires whenever a photo is added or removed by a remote sync event.
+  // PhotoStrip subscribes so it can reload without polling.
+  static final _remoteChanges = StreamController<void>.broadcast();
+  static Stream<void> get remoteChanges => _remoteChanges.stream;
+
   // ── Read ──────────────────────────────────────────────────────────────────
   static Future<List<AppPhoto>> forOwner(
       String ownerType, String ownerId) async {
@@ -201,6 +207,7 @@ class PhotoStorage {
     );
     all.add(photo);
     await _saveAll(all);
+    _remoteChanges.add(null);
     unawaited(_downloadAndCache(photo));
   }
 
@@ -218,6 +225,7 @@ class PhotoStorage {
     all.removeWhere((ph) => ph.id == photoId);
     await _saveAll(all);
     _deleteFile(photo.pathOrData);
+    _remoteChanges.add(null);
   }
 
   static Future<void> delete(AppPhoto photo) async {
