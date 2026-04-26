@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'error_service.dart';
+import '../photo_storage_io.dart';
 
 /// Called when Firestore has changes for a vehicle's parts.
 /// [vehicleId]      — which vehicle changed
@@ -36,6 +37,7 @@ class FirestoreSync {
   FirestoreVehicleDeleteCallback? vehicleDeleteCallback;
 
   StreamSubscription<QuerySnapshot>? _vehiclesSub;
+  StreamSubscription<QuerySnapshot>? _photoMetaSub;
   final Map<String, StreamSubscription<QuerySnapshot>> _partSubs = {};
   bool _active = false;
 
@@ -54,14 +56,36 @@ class FirestoreSync {
           (snap) => _onVehiclesChanged(uid, snap),
           onError: (e, st) => logError('FirestoreSync vehicles stream', e, st),
         );
+
+    _photoMetaSub = _db
+        .collection('users')
+        .doc(uid)
+        .collection('photoMeta')
+        .snapshots()
+        .listen(
+          _onPhotoMetaChanged,
+          onError: (e, st) => logError('FirestoreSync photoMeta stream', e, st),
+        );
   }
 
   void stop() {
     _active = false;
     _vehiclesSub?.cancel();
     _vehiclesSub = null;
+    _photoMetaSub?.cancel();
+    _photoMetaSub = null;
     for (final sub in _partSubs.values) { sub.cancel(); }
     _partSubs.clear();
+  }
+
+  // ── PhotoMeta listener ──────────────────────────────────────────────────────
+
+  void _onPhotoMetaChanged(QuerySnapshot snap) {
+    for (final change in snap.docChanges) {
+      if (change.type == DocumentChangeType.removed) {
+        PhotoStorage.deleteLocalById(change.doc.id);
+      }
+    }
   }
 
   // ── Vehicle listener ────────────────────────────────────────────────────────

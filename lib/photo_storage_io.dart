@@ -220,6 +220,20 @@ class PhotoStorage {
     _deleteFile(photo.pathOrData);
   }
 
+  /// Deletes a local photo by ID only — used when a real-time Firestore
+  /// listener detects the photoMeta doc was removed remotely.
+  static Future<void> deleteLocalById(String photoId) async {
+    final all = await _loadAll();
+    final photo = all.cast<AppPhoto?>().firstWhere(
+      (ph) => ph!.id == photoId,
+      orElse: () => null,
+    );
+    if (photo == null) return;
+    all.removeWhere((ph) => ph.id == photoId);
+    await _saveAll(all);
+    _deleteFile(photo.pathOrData);
+  }
+
   static Future<void> delete(AppPhoto photo) async {
     final all = await _loadAll();
     all.removeWhere((ph) => ph.id == photo.id);
