@@ -5135,8 +5135,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
               sideChip('Front', 'Front'),
               const SizedBox(width: 6),
               sideChip('Rear', 'Rear'),
-              const SizedBox(width: 6),
-              sideChip('Pair', 'Pair'),
             ]),
           ),
           const SizedBox(height: 10),
@@ -6368,8 +6366,6 @@ class _AddPartScreenState extends State<AddPartScreen> {
     final rightKw = ['right', ' rh', 'rh ', 'passenger side'];
     final frontKw = ['front', ' frt', 'frt '];
     final rearKw  = ['rear', ' rr', 'rr ', 'back ', ' back'];
-    final pairKw  = ['pair', 'set of 2', 'both sides'];
-    if (pairKw.any((k) => lower.contains(k)))  return 'Pair';
     if (leftKw.any((k) => lower.contains(k)))  return 'Left';
     if (rightKw.any((k) => lower.contains(k))) return 'Right';
     if (frontKw.any((k) => lower.contains(k))) return 'Front';
@@ -6862,7 +6858,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
                         SizedBox(width: 6),
                         Text('Side:', style: TextStyle(fontSize: 13, color: Colors.white54)),
                       ]),
-                      ...['Left', 'Right', 'Front', 'Rear', 'Pair'].map((s) => ChoiceChip(
+                      ...['Left', 'Right', 'Front', 'Rear'].map((s) => ChoiceChip(
                         label: Text(s, style: const TextStyle(fontSize: 12)),
                         selected: _side == s,
                         onSelected: (v) => setState(() => _side = v ? s : null),
@@ -7318,7 +7314,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
                 runSpacing: 4,
                 children: [
                   const Text('Side:', style: TextStyle(fontSize: 13, color: Colors.white54)),
-                  ...['Left', 'Right', 'Front', 'Rear', 'Pair'].map((s) => ChoiceChip(
+                  ...['Left', 'Right', 'Front', 'Rear'].map((s) => ChoiceChip(
                     label: Text(s, style: const TextStyle(fontSize: 12)),
                     selected: _side == s,
                     onSelected: (v) => setState(() => _side = v ? s : null),
