@@ -123,10 +123,12 @@ class PhotoStorage {
     final all = await _loadAll();
 
     // Fetch all photo IDs in Firestore once — used to detect web deletions.
+    // null means the fetch failed (network error) — skip deletion to avoid
+    // wiping local photos when offline.
     final remoteIds = await FirestoreService.getPhotoMetaIds(uid);
 
     for (final photo in all) {
-      if (photo.remoteUrl != null && !remoteIds.contains(photo.id)) {
+      if (remoteIds != null && photo.remoteUrl != null && !remoteIds.contains(photo.id)) {
         // Photo was deleted from the web — delete locally too.
         await delete(photo);
       } else if (photo.remoteUrl == null) {
