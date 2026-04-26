@@ -108,6 +108,18 @@ class FirestoreService {
     }
   }
 
+  /// Returns the set of photo IDs that exist in Firestore photoMeta.
+  /// Used to detect photos deleted from the web so they can be removed locally.
+  static Future<Set<String>> getPhotoMetaIds(String uid) async {
+    try {
+      final snap = await _photoMetaCol(uid).get();
+      return snap.docs.map((d) => d.id).toSet();
+    } catch (e, st) {
+      logError('Firestore getPhotoMetaIds', e, st);
+      return {};
+    }
+  }
+
   // ── User profile ───────────────────────────────────────────────────────────
 
   static Future<void> ensureUserProfile(String uid, String email) async {

@@ -112,22 +112,52 @@ class PhotoStorage {
     }
   }
 
-  /// Uploads any local photos that were saved before Firebase Storage was set up,
-  /// and ensures every photo with a remoteUrl has a matching Firestore photoMeta
-  /// record (covers photos uploaded by older app versions that skipped that step).
-  /// Safe to call every sign-in.
+  /// Syncs local photos against Firestore and Storage on every sign-in:
+  /// - Photos deleted from the web (gone from Firestore photoMeta) → delete locally.
+  /// - Local photos with no remoteUrl → upload to Storage + write photoMeta.
+  /// - Local photos with a stale remoteUrl (Storage 404) → re-upload.
+  /// - Local photos fully synced → ensure Firestore photoMeta exists.
   static Future<void> backfillRemoteUrls() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final all = await _loadAll();
+
+    // Fetch all photo IDs in Firestore once — used to detect web deletions.
+    final remoteIds = await FirestoreService.getPhotoMetaIds(uid);
+
     for (final photo in all) {
-      if (photo.remoteUrl == null) {
-        // Sequential — avoids concurrent decompress/compress OOM on iOS.
+      if (photo.remoteUrl != null && !remoteIds.contains(photo.id)) {
+        // Photo was deleted from the web — delete locally too.
+        await delete(photo);
+      } else if (photo.remoteUrl == null) {
+        // Never uploaded — upload now (sequential to avoid OOM on iOS).
         await _uploadAndSync(photo);
+      } else if (await _isRemoteUrlStale(photo.remoteUrl!)) {
+        // URL exists locally but Storage file is gone — re-upload.
+        final stale = AppPhoto(
+          id: photo.id, ownerType: photo.ownerType, ownerId: photo.ownerId,
+          createdAt: photo.createdAt, pathOrData: photo.pathOrData,
+          remoteUrl: null,
+        );
+        await _uploadAndSync(stale);
       } else {
-        // Photo already in Storage — make sure Firestore photoMeta exists.
+        // Fully synced — ensure Firestore photoMeta record exists.
         unawaited(FirestoreService.upsertPhotoMeta(uid, photo));
       }
+    }
+  }
+
+  /// Returns true if the remote URL returns a 404/403, meaning the file is
+  /// gone from Storage and needs to be re-uploaded.
+  static Future<bool> _isRemoteUrlStale(String url) async {
+    try {
+      final client = HttpClient();
+      final request = await client.headUrl(Uri.parse(url));
+      final response = await request.close();
+      client.close();
+      return response.statusCode == 404 || response.statusCode == 403;
+    } catch (_) {
+      return false; // network error — assume OK, don't re-upload
     }
   }
 
