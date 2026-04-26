@@ -129,8 +129,9 @@ class PhotoStorage {
 
     for (final photo in all) {
       if (remoteIds != null && photo.remoteUrl != null && !remoteIds.contains(photo.id)) {
-        // Photo was deleted from the web — delete locally too.
-        await delete(photo);
+        // Photo was deleted from the web — remove local copy only.
+        // Skip _deleteRemote: Storage and photoMeta are already gone.
+        await _deleteLocalOnly(photo);
       } else if (photo.remoteUrl == null) {
         // Never uploaded — upload now (sequential to avoid OOM on iOS).
         await _uploadAndSync(photo);
@@ -211,6 +212,13 @@ class PhotoStorage {
   }
 
   // ── Delete single ─────────────────────────────────────────────────────────
+  static Future<void> _deleteLocalOnly(AppPhoto photo) async {
+    final all = await _loadAll();
+    all.removeWhere((ph) => ph.id == photo.id);
+    await _saveAll(all);
+    _deleteFile(photo.pathOrData);
+  }
+
   static Future<void> delete(AppPhoto photo) async {
     final all = await _loadAll();
     all.removeWhere((ph) => ph.id == photo.id);
