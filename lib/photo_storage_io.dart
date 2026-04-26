@@ -339,10 +339,16 @@ class PhotoStorage {
       if (file.existsSync()) await file.delete();
       await tmp.rename(file.path);
     } catch (e) {
-      // Fallback: copy bytes then clean up tmp
+      // Rename may have succeeded despite throwing (some Android fs variants).
+      // If the target now exists, we're done — just clean up tmp.
+      if (file.existsSync()) {
+        if (tmp.existsSync()) await tmp.delete();
+        return;
+      }
+      // Fallback: copy bytes then clean up tmp (only if tmp still exists).
       if (kDebugMode) debugPrint('PhotoStorage: atomic rename failed, using copy fallback: $e');
       try {
-        await tmp.copy(file.path);
+        if (tmp.existsSync()) await tmp.copy(file.path);
       } finally {
         if (tmp.existsSync()) await tmp.delete();
       }
