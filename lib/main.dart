@@ -350,6 +350,7 @@ class _AppShellState extends State<AppShell> {
     if (changed) {
       setState(() {});
       _persist();
+      FirestoreSync.notifyVehicleChanged(vehicleId);
     }
   }
 
@@ -372,6 +373,7 @@ class _AppShellState extends State<AppShell> {
           });
           setState(() => _vehicles[idx] = updated);
           _persist();
+          FirestoreSync.notifyVehicleChanged(vehicleId);
         } catch (e, st) {
           logError('Vehicle.fromJson (metadata update) vehicleId=$vehicleId', e, st);
         }
@@ -4228,6 +4230,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
   Timer? _searchDebounce;
+  StreamSubscription<String>? _remoteSub;
 
   @override
   void initState() {
@@ -4235,6 +4238,11 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     _v = Vehicle.fromJson(widget.vehicle.toJson());
     _searchCtrl.addListener(_onSearchChanged);
     WidgetsBinding.instance.addObserver(this);
+    _remoteSub = FirestoreSync.vehicleChanged.listen((vehicleId) {
+      if (!mounted || vehicleId != _v.id) return;
+      final updated = widget.allVehicles.where((v) => v.id == vehicleId).firstOrNull;
+      if (updated != null) setState(() => _v = Vehicle.fromJson(updated.toJson()));
+    });
   }
 
   void _onSearchChanged() {
@@ -4251,6 +4259,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _remoteSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _searchCtrl.dispose();
     super.dispose();

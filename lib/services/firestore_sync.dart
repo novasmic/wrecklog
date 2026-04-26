@@ -42,6 +42,14 @@ class FirestoreSync {
   bool _active = false;
   bool _photoMetaReady = false; // skips initial snapshot's 'added' events
 
+  // ── Vehicle-changed stream ───────────────────────────────────────────────────
+  // Fires a vehicleId whenever that vehicle's parts or metadata are updated
+  // from a remote sync. VehicleDetailScreen subscribes so it can refresh _v.
+  static final _vehicleChanged = StreamController<String>.broadcast();
+  static Stream<String> get vehicleChanged => _vehicleChanged.stream;
+  static void notifyVehicleChanged(String vehicleId) =>
+      _vehicleChanged.add(vehicleId);
+
   // ── Public API ──────────────────────────────────────────────────────────────
 
   void start(String uid) {
