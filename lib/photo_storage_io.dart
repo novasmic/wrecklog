@@ -129,14 +129,15 @@ class PhotoStorage {
 
     for (final photo in all) {
       if (remoteIds != null && photo.remoteUrl != null && !remoteIds.contains(photo.id)) {
-        // Photo was deleted from the web — remove local copy only.
-        // Skip _deleteRemote: Storage and photoMeta are already gone.
+        // Deleted from web — remove local copy only.
         await _deleteLocalOnly(photo);
       } else if (photo.remoteUrl == null) {
         // Never uploaded — upload now (sequential to avoid OOM on iOS).
         await _uploadAndSync(photo);
+      } else if (remoteIds != null && remoteIds.contains(photo.id)) {
+        // Confirmed in Firestore — Storage and photoMeta both exist. Skip.
       } else if (await _isRemoteUrlStale(photo.remoteUrl!)) {
-        // URL exists locally but Storage file is gone — re-upload.
+        // Firestore state unknown + stale URL — re-upload.
         final stale = AppPhoto(
           id: photo.id, ownerType: photo.ownerType, ownerId: photo.ownerId,
           createdAt: photo.createdAt, pathOrData: photo.pathOrData,
@@ -144,7 +145,7 @@ class PhotoStorage {
         );
         await _uploadAndSync(stale);
       } else {
-        // Fully synced — ensure Firestore photoMeta record exists.
+        // Firestore state unknown + URL OK — write photoMeta as safety net.
         unawaited(FirestoreService.upsertPhotoMeta(uid, photo));
       }
     }
