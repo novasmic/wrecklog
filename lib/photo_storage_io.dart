@@ -41,6 +41,10 @@ class PhotoStorage {
   static final _remoteChanges = StreamController<void>.broadcast();
   static Stream<void> get remoteChanges => _remoteChanges.stream;
 
+  // Serialises cacheFromRemote calls so concurrent Firestore batch events
+  // don't race on metadata.json.tmp.
+  static Future<void> _cacheQueue = Future.value();
+
   // ── Read ──────────────────────────────────────────────────────────────────
   static Future<List<AppPhoto>> forOwner(
       String ownerType, String ownerId) async {
@@ -184,6 +188,31 @@ class PhotoStorage {
   /// Creates a local metadata entry and downloads the file in the background.
   /// Safe to call repeatedly — skips if the photo already exists locally.
   static Future<void> cacheFromRemote({
+    required String photoId,
+    required String ownerType,
+    required String ownerId,
+    required String remoteUrl,
+    required int createdAt,
+  }) async {
+    // Serialise via queue so concurrent Firestore batch events don't race
+    // on metadata.json.tmp (multiple 'added' changes arrive without await).
+    final prev = _cacheQueue;
+    final self = Completer<void>();
+    _cacheQueue = self.future;
+    try {
+      await prev;
+      await _cacheFromRemoteInner(
+        photoId: photoId, ownerType: ownerType, ownerId: ownerId,
+        remoteUrl: remoteUrl, createdAt: createdAt,
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('PhotoStorage: cacheFromRemote error: $e');
+    } finally {
+      self.complete();
+    }
+  }
+
+  static Future<void> _cacheFromRemoteInner({
     required String photoId,
     required String ownerType,
     required String ownerId,
@@ -346,8 +375,11 @@ class PhotoStorage {
         return;
       }
       // Fallback: copy bytes then clean up tmp (only if tmp still exists).
+      // Re-create the directory first — the race with concurrent _saveAll
+      // calls can leave the directory absent by the time we reach this path.
       if (kDebugMode) debugPrint('PhotoStorage: atomic rename failed, using copy fallback: $e');
       try {
+        await file.parent.create(recursive: true);
         if (tmp.existsSync()) await tmp.copy(file.path);
       } finally {
         if (tmp.existsSync()) await tmp.delete();
