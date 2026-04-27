@@ -231,8 +231,11 @@ class FirestoreService {
         await doc.reference.delete();
       }
 
-      // Delete the user profile document.
-      await _db.collection('users').doc(uid).delete();
+      // Clear migratedAt so a fresh device can re-upload, but preserve
+      // isPro and other profile fields so web access isn't lost.
+      await _db.collection('users').doc(uid).update(
+        {'migratedAt': FieldValue.delete()},
+      );
 
       if (kDebugMode) debugPrint('Firestore: deleted all data for $uid');
     } catch (e, st) {
