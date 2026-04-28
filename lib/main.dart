@@ -3230,20 +3230,9 @@ class VehicleCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (isCompleted) ...[
+                        ...[
                           const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.grey.withValues(alpha: 0.4)),
-                            ),
-                            child: const Text(
-                              'Shell Gone',
-                              style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700),
-                            ),
-                          ),
+                          _StatusBadge(vehicle.status),
                         ],
                       ],
                     ),
@@ -3317,6 +3306,32 @@ class VehicleCard extends StatelessWidget {
   }
 }
 
+
+class _StatusBadge extends StatelessWidget {
+  final VehicleStatus status;
+  const _StatusBadge(this.status);
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      VehicleStatus.whole     => const Color(0xFFE53935),
+      VehicleStatus.stripping => const Color(0xFF4CAF50),
+      VehicleStatus.shellGone => const Color(0xFFE8700A),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        status.label,
+        style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Default model suggestions per vehicle type — shown when recents list is empty.
