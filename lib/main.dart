@@ -1177,6 +1177,7 @@ class Vehicle {
   List<String> photoIds;    // reserved for photo feature
 
   /// v1.3 market data fields — optional vehicle spec details.
+  String? series;
   String? trim;
   String? engine;
   String? transmission;
@@ -1199,6 +1200,7 @@ class Vehicle {
     this.notes,
     this.createdAt,
     this.updatedAt,
+    this.series,
     this.trim,
     this.engine,
     this.transmission,
@@ -1247,6 +1249,7 @@ class Vehicle {
         'createdAt': createdAt?.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
         'photoIds': photoIds,
+        'series': series,
         'trim': trim,
         'engine': engine,
         'transmission': transmission,
@@ -1273,6 +1276,7 @@ class Vehicle {
       createdAt: j['createdAt'] == null ? null : DateTime.tryParse(j['createdAt'] as String),
       updatedAt: j['updatedAt'] == null ? null : DateTime.tryParse(j['updatedAt'] as String),
       photoIds: (j['photoIds'] as List<dynamic>?)?.map((e) => e as String).toList(),
+      series: j['series'] as String?,
       trim: j['trim'] as String?,
       engine: j['engine'] as String?,
       transmission: j['transmission'] as String?,
@@ -2049,10 +2053,12 @@ String _partSecondaryLine(Part p) {
 }
 
 String _titleOrFallback(Vehicle v) {
+  final series = (v.series ?? '').trim();
   final make = v.make.trim();
   final model = v.model.trim();
   if (make.isEmpty && model.isEmpty) return '${v.year} Item';
-  return '${v.year} $make $model'.trim();
+  return [if (series.isNotEmpty) series, v.year.toString(), make, model]
+      .where((s) => s.isNotEmpty).join(' ');
 }
 
 void normalizePartStateFromListings(Part p) {
@@ -3070,7 +3076,7 @@ class _VehicleDetailsSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            '${vehicle.year} ${vehicle.make} ${vehicle.model}',
+            _titleOrFallback(vehicle),
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
           ),
           const SizedBox(height: 4),
@@ -3678,6 +3684,7 @@ class AddVehicleScreen extends StatefulWidget {
 class _AddVehicleScreenState extends State<AddVehicleScreen> {
   final _makeCtrl = TextEditingController();
   final _modelCtrl = TextEditingController();
+  final _seriesCtrl = TextEditingController();
 
   String _makeValue = '';
   int _selectedYear = DateTime.now().year;
@@ -3700,6 +3707,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   void dispose() {
     _makeCtrl.dispose();
     _modelCtrl.dispose();
+    _seriesCtrl.dispose();
     super.dispose();
   }
 
@@ -3733,6 +3741,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
       );
       return;
     }
+    final series = _seriesCtrl.text.trim();
     final v = Vehicle(
       id: newId(),
       make: make,
@@ -3744,6 +3753,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
       parts: [],
       usageUnit: 'km',
       color: '',
+      series: series.isEmpty ? null : series,
       createdAt: DateTime.now(),
     );
     _submitted = true;
@@ -3794,6 +3804,18 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
               controller: _modelCtrl,
               itemType: _itemType,
               make: _makeValue,
+            ),
+            const SizedBox(height: 12),
+
+            // Series / generation
+            TextField(
+              controller: _seriesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Series (optional)',
+                hintText: 'e.g. PX2 / N80 / MQ',
+              ),
+              textCapitalization: TextCapitalization.characters,
+              textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 12),
 
@@ -3895,6 +3917,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
   late final TextEditingController _colorCtrl;
   late final TextEditingController _usageCtrl;
   late final TextEditingController _notesCtrl;
+  late final TextEditingController _seriesCtrl;
   late final TextEditingController _trimCtrl;
   late final TextEditingController _engineCtrl;
   late final TextEditingController _transmissionCtrl;
@@ -3922,6 +3945,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       text: v.usageValue != null ? v.usageValue.toString() : '',
     );
     _notesCtrl = TextEditingController(text: v.notes ?? '');
+    _seriesCtrl = TextEditingController(text: v.series ?? '');
     _trimCtrl = TextEditingController(text: v.trim ?? '');
     _engineCtrl = TextEditingController(text: v.engine ?? '');
     _transmissionCtrl = TextEditingController(text: v.transmission ?? '');
@@ -3941,6 +3965,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
     _colorCtrl.dispose();
     _usageCtrl.dispose();
     _notesCtrl.dispose();
+    _seriesCtrl.dispose();
     _trimCtrl.dispose();
     _engineCtrl.dispose();
     _transmissionCtrl.dispose();
@@ -3984,6 +4009,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       usageUnit: _usageUnit,
       color: _colorCtrl.text.trim(),
       notes: notes.isEmpty ? null : notes,
+      series: _seriesCtrl.text.trim().isEmpty ? null : _seriesCtrl.text.trim(),
       trim: _trimCtrl.text.trim().isEmpty ? null : _trimCtrl.text.trim(),
       engine: _engineCtrl.text.trim().isEmpty ? null : _engineCtrl.text.trim(),
       transmission: _transmissionCtrl.text.trim().isEmpty ? null : _transmissionCtrl.text.trim(),
@@ -4057,6 +4083,13 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                       if (year < 1900 || year > DateTime.now().year + 1) return 'Year looks wrong';
                       return null;
                     },
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _seriesCtrl,
+                    decoration: const InputDecoration(labelText: 'Series (optional)', hintText: 'e.g. PX2 / N80 / MQ'),
+                    textCapitalization: TextCapitalization.characters,
+                    textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
@@ -8099,11 +8132,12 @@ class StatsTab extends StatefulWidget {
   }
 
   static String _vehicleTitle(Vehicle v) {
+    final series = (v.series ?? '').trim();
     final make = v.make.trim();
     final model = v.model.trim();
     final year = v.year.toString();
     final id = (v.identifier ?? '').trim();
-    final base = [year, make, model].where((s) => s.isNotEmpty).join(' ');
+    final base = [if (series.isNotEmpty) series, year, make, model].where((s) => s.isNotEmpty).join(' ');
     return id.isEmpty ? base : '$base • $id';
   }
 
