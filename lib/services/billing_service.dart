@@ -153,24 +153,29 @@ class BillingService extends ChangeNotifier {
     _foundActive       = false;
     _sawAnyCallback    = false;
 
-    await _iap.restorePurchases();
+    try {
+      await _iap.restorePurchases();
 
-    // restorePurchases() is fire-and-forget — results arrive via purchaseStream.
-    // Use an 8-second window (generous for slow networks) before evaluating.
-    await Future.delayed(const Duration(seconds: 8));
+      // restorePurchases() is fire-and-forget — results arrive via purchaseStream.
+      // Use an 8-second window (generous for slow networks) before evaluating.
+      await Future.delayed(const Duration(seconds: 8));
 
-    // Only revoke if Play actually responded but returned no active entitlement.
-    // If _sawAnyCallback is false, Play never responded (network issue) —
-    // preserve the user's existing Pro status rather than incorrectly revoking.
-    if (_sawAnyCallback && !_foundActive) {
-      await _revokePro();
-    } else if (_foundActive) {
-      // Always sync to Firestore after a successful restore — _grantPro() skips
-      // the sync when isPro is already true in local cache.
-      _syncPro(true);
+      // Only revoke if Play actually responded but returned no active entitlement.
+      // If _sawAnyCallback is false, Play never responded (network issue) —
+      // preserve the user's existing Pro status rather than incorrectly revoking.
+      if (_sawAnyCallback && !_foundActive) {
+        await _revokePro();
+      } else if (_foundActive) {
+        // Always sync to Firestore after a successful restore — _grantPro() skips
+        // the sync when isPro is already true in local cache.
+        _syncPro(true);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('BillingService restore error: $e');
+      // Preserve existing Pro status on error — don't revoke on network failure.
+    } finally {
+      _restoreInProgress = false;
     }
-
-    _restoreInProgress = false;
   }
 
   // ── Grant / revoke ─────────────────────────────────────────────────────────
