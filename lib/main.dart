@@ -12530,12 +12530,12 @@ class _HomeTabState extends State<HomeTab> {
 
                   // ── 8 stat cards ─────────────────────────────────────
                   GridView.count(
-                    crossAxisCount: 2,
+                    crossAxisCount: 4,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     crossAxisSpacing: 8,
                     mainAxisSpacing: 8,
-                    childAspectRatio: 2.1,
+                    childAspectRatio: 1.05,
                     children: [
                       _StatCard(label: 'Vehicles', value: '${s.vehicles}',
                           icon: Icons.directions_car_outlined, color: const Color(0xFFE8700A)),
@@ -12607,7 +12607,7 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         gradient: const LinearGradient(
@@ -12617,33 +12617,27 @@ class _StatCard extends StatelessWidget {
         ),
         border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(value,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        height: 1.1),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text(label,
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.38),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Icon(icon, color: color.withValues(alpha: 0.65), size: 20),
+          Icon(icon, color: color.withValues(alpha: 0.7), size: 16),
+          const SizedBox(height: 4),
+          Text(value,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 2),
+          Text(label,
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.38),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
         ],
       ),
     );
@@ -12677,7 +12671,7 @@ class _NeedsListingBanner extends StatelessWidget {
               children: [
                 Text('$count parts need listing',
                     style: const TextStyle(
-                        color: Colors.white,
+                        color: Color(0xFFE8400A),
                         fontWeight: FontWeight.w700,
                         fontSize: 13)),
                 if (potentialCents > 0)
@@ -12712,7 +12706,7 @@ class _RecentVehicleRow extends StatelessWidget {
         statusColor = Colors.white38;
         statusLabel = 'Shell Gone';
       case VehicleStatus.whole:
-        statusColor = Colors.blueAccent;
+        statusColor = const Color(0xFFE53935);
         statusLabel = 'Whole';
     }
 
