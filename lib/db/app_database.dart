@@ -84,6 +84,24 @@ class PartsTable extends Table {
   TextColumn get vehicleUsageUnit    => text().nullable()();
   TextColumn get ownerId             => text().nullable()();
   IntColumn  get deletedAt           => integer().nullable()();
+  TextColumn get interchangeGroupId  => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+// ── Interchange groups ────────────────────────────────────────────────────────
+
+@DataClassName('InterchangeGroupRow')
+class InterchangeGroupsTable extends Table {
+  @override
+  String get tableName => 'interchange_groups';
+
+  TextColumn get id        => text()();
+  TextColumn get label     => text().withDefault(const Constant(''))();
+  TextColumn get numbers   => text().withDefault(const Constant('[]'))(); // JSON array
+  IntColumn  get createdAt => integer()();
+  IntColumn  get updatedAt => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -112,24 +130,27 @@ class ListingsTable extends Table {
 
 // ── Database ──────────────────────────────────────────────────────────────────
 
-@DriftDatabase(tables: [VehiclesTable, PartsTable, ListingsTable])
+@DriftDatabase(tables: [VehiclesTable, PartsTable, ListingsTable, InterchangeGroupsTable])
 class AppDatabase extends _$AppDatabase {
   AppDatabase._() : super(_openConnection());
 
   static final AppDatabase instance = AppDatabase._();
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
-      // Indexes for the most common query patterns
-      await customStatement(
-          'CREATE INDEX idx_parts_vehicle_id ON parts(vehicle_id)');
-      await customStatement(
-          'CREATE INDEX idx_listings_part_id ON listings(part_id)');
+      await customStatement('CREATE INDEX idx_parts_vehicle_id ON parts(vehicle_id)');
+      await customStatement('CREATE INDEX idx_listings_part_id ON listings(part_id)');
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(partsTable, partsTable.interchangeGroupId);
+        await m.createTable(interchangeGroupsTable);
+      }
     },
   );
 

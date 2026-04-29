@@ -14,6 +14,7 @@ import '../main.dart'
         Vehicle,
         Part,
         Listing,
+        InterchangeGroup,
         PartStateX,
         VehicleStatusX,
         ItemTypeX,
@@ -192,6 +193,7 @@ class VehicleStore {
       vehicleUsageValue:   r.vehicleUsageValue,
       vehicleUsageUnit:    r.vehicleUsageUnit,
       listings:            listingRows.map(_listingFromRow).toList(),
+      interchangeGroupId:  r.interchangeGroupId,
     );
   }
 
@@ -271,6 +273,7 @@ class VehicleStore {
       vehicleDrivetrain:   Value(part.vehicleDrivetrain),
       vehicleUsageValue:   Value(part.vehicleUsageValue),
       vehicleUsageUnit:    Value(part.vehicleUsageUnit),
+      interchangeGroupId:  Value(part.interchangeGroupId),
       ownerId:             const Value(null),
       deletedAt:           const Value(null),
     );
@@ -290,6 +293,58 @@ class VehicleStore {
       deletedAt:        const Value(null),
     );
   }
+
+  // ── Interchange groups ────────────────────────────────────────────────────
+
+  static Future<List<InterchangeGroup>> loadInterchangeGroups() async {
+    if (!await _migrationDone) return [];
+    try {
+      final db = AppDatabase.instance;
+      final rows = await db.select(db.interchangeGroupsTable).get();
+      return rows.map(_groupFromRow).toList();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[VehicleStore] loadInterchangeGroups error: $e');
+      return [];
+    }
+  }
+
+  static Future<void> upsertInterchangeGroup(InterchangeGroup g) async {
+    if (!await _migrationDone) return;
+    try {
+      final db = AppDatabase.instance;
+      await db.into(db.interchangeGroupsTable).insertOnConflictUpdate(
+        InterchangeGroupsTableCompanion.insert(
+          id:        g.id,
+          label:     Value(g.label),
+          numbers:   Value(jsonEncode(g.numbers)),
+          createdAt: g.createdAt.millisecondsSinceEpoch,
+          updatedAt: Value(g.updatedAt?.millisecondsSinceEpoch),
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('[VehicleStore] upsertInterchangeGroup error: $e');
+    }
+  }
+
+  static Future<void> deleteInterchangeGroup(String id) async {
+    if (!await _migrationDone) return;
+    try {
+      final db = AppDatabase.instance;
+      await (db.delete(db.interchangeGroupsTable)
+            ..where((t) => t.id.equals(id)))
+          .go();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[VehicleStore] deleteInterchangeGroup error: $e');
+    }
+  }
+
+  static InterchangeGroup _groupFromRow(InterchangeGroupRow r) => InterchangeGroup(
+    id:        r.id,
+    label:     r.label,
+    numbers:   _decodeStringList(r.numbers),
+    createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
+    updatedAt: r.updatedAt != null ? DateTime.fromMillisecondsSinceEpoch(r.updatedAt!) : null,
+  );
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 

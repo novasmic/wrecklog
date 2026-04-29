@@ -32,7 +32,7 @@ const int kMaxPartPhotos    = kMaxPhotosPerOwner; // 5
 // - iOS/Android: files stored in app-specific documents directory
 // - Web: photos stored as base64 strings in local storage
 // - Cross-device: if local file missing but remoteUrl exists, use NetworkImage
-ImageProvider _imageProviderFor(AppPhoto photo) {
+ImageProvider imageProviderFor(AppPhoto photo) {
   if (kIsWeb) {
     try {
       return MemoryImage(base64Decode(photo.pathOrData));
@@ -302,7 +302,7 @@ class _Thumbnail extends StatelessWidget {
             child: Image(
               // ResizeImage decodes at 2× display size, avoiding full-res
               // JPEG held in memory for each thumbnail.
-              image: ResizeImage(_imageProviderFor(photo), width: 180, height: 180),
+              image: ResizeImage(imageProviderFor(photo), width: 180, height: 180),
               fit: BoxFit.cover, width: 90, height: 90,
               errorBuilder: (_, __, ___) => Container(
                 color: Colors.white10,
@@ -440,7 +440,7 @@ class _FullscreenViewerState extends State<_FullscreenViewer> {
         onPageChanged: (i) => setState(() => _current = i),
         builder: (_, i) {
           ImageProvider? provider;
-          try { provider = _imageProviderFor(_photos[i]); } catch (_) {}
+          try { provider = imageProviderFor(_photos[i]); } catch (_) {}
 
           if (provider == null) {
             return PhotoViewGalleryPageOptions.customChild(

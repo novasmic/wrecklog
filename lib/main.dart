@@ -74,6 +74,57 @@ class PartCategoryStorage {
   }
 }
 
+const List<String> kPartLocations = [
+  'Shelf A',
+  'Shelf B',
+  'Shelf C',
+  'Shelf D',
+  'Shelf E',
+  'Shelf F',
+  'Bin A',
+  'Bin B',
+  'Bin C',
+  'Other',
+];
+
+class PartLocationStorage {
+  static const _key = 'part_locations';
+
+  static Future<List<String>> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_key) ?? List.from(kPartLocations);
+  }
+
+  static Future<void> save(List<String> locations) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_key, locations);
+  }
+}
+
+const List<String> kConditions = [
+  'New',
+  'Excellent',
+  'Good',
+  'Used',
+  'Fair',
+  'Damaged',
+  'For Parts',
+];
+
+class ConditionStorage {
+  static const _key = 'part_conditions';
+
+  static Future<List<String>> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_key) ?? List.from(kConditions);
+  }
+
+  static Future<void> save(List<String> conditions) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_key, conditions);
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -403,6 +454,8 @@ class _AppShellState extends State<AppShell> {
     setState(() => _loading = true);
     final v = await VehicleStore.loadVehicles();
     if (!mounted) return;
+    // Load interchange groups in parallel with vehicle loading.
+    InterchangeService.instance.load(auth.uid);
 
     // If local is empty, wait briefly for Firebase Auth to initialise before
     // deciding whether to restore from cloud or redirect to landing screen.
@@ -688,52 +741,56 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  Future<void> _openVehicle(Vehicle v) async {
+    final updated = await Navigator.of(context).push<Vehicle>(
+      MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: v, allVehicles: _vehicles)),
+    );
+    if (updated != null) await _updateVehicle(updated);
+  }
+
+  Future<void> _doAddVehicle() async {
+    if (!isPro && _vehicles.length >= kFreeVehicleLimit) {
+      await showRatingDialog(context);
+      if (!context.mounted) return;
+      await showProPaywall(
+        context,
+        title: 'Free limit reached',
+        message: 'Free WreckLog is limited to $kFreeVehicleLimit vehicle. Upgrade to Pro for unlimited vehicles and parts.',
+      );
+      return;
+    }
+    final created = await Navigator.of(context).push<Vehicle>(
+      MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
+    );
+    if (created == null || !context.mounted) return;
+    await _addVehicle(created);
+    if (!context.mounted) return;
+    final updated = await Navigator.of(context).push<Vehicle>(
+      MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: _vehicles)),
+    );
+    if (updated != null) await _updateVehicle(updated);
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Home screen is the navigation hub — shown without a nav bar.
-    if (_tab == 0) {
-      return HomeScreen(
-        onAddVehicle:   () async {
-          if (!isPro && _vehicles.length >= kFreeVehicleLimit) {
-            await showRatingDialog(context);
-            if (!context.mounted) return;
-            await showProPaywall(
-              context,
-              title: 'Free limit reached',
-              message: 'Free WreckLog is limited to $kFreeVehicleLimit vehicle. Upgrade to Pro for unlimited vehicles and parts.',
-            );
-            return;
-          }
-          final created = await Navigator.of(context).push<Vehicle>(
-            MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
-          );
-          if (created == null || !context.mounted) return;
-          await _addVehicle(created);
-          if (!context.mounted) return;
-          final updated = await Navigator.of(context).push<Vehicle>(
-            MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: _vehicles)),
-          );
-          if (updated != null) await _updateVehicle(updated);
-        },
-        onViewVehicles: () => setState(() => _tab = 1),
-        onSearchParts:  () => setState(() => _tab = 2),
-        onStats:        () => setState(() => _tab = 3),
-        onSettings:     () => setState(() => _tab = 4),
-      );
-    }
-
     // IndexedStack keeps all tab widgets alive — state (search query, scroll
     // position, etc.) is preserved when switching between tabs.
-    // PopScope intercepts the back gesture to return to the home screen.
+    // PopScope intercepts the back gesture to return to the home tab.
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) setState(() => _tab = 0);
+        if (!didPop && _tab != 0) setState(() => _tab = 0);
       },
       child: Scaffold(
         body: IndexedStack(
-          index: _tab - 1,
+          index: _tab,
           children: [
+            HomeTab(
+              loading: _loading,
+              vehicles: _vehicles,
+              onAddVehicle: _doAddVehicle,
+              onOpenVehicle: _openVehicle,
+            ),
             VehiclesHome(
               loading: _loading,
               vehicles: _vehicles,
@@ -1015,6 +1072,9 @@ class Part {
   DateTime? dateListed;
   DateTime? dateSold;
 
+  /// Links this part to an InterchangeGroup (cross-reference library).
+  String? interchangeGroupId;
+
   Part({
     required this.id,
     required this.name,
@@ -1043,6 +1103,7 @@ class Part {
     this.side,
     this.dateListed,
     this.dateSold,
+    this.interchangeGroupId,
     List<String>? photoIds,
     List<Listing>? listings,
   }) : photoIds = photoIds ?? [],
@@ -1109,6 +1170,7 @@ class Part {
         'side': side,
         'dateListed': dateListed?.toIso8601String(),
         'dateSold': dateSold?.toIso8601String(),
+        'interchangeGroupId': interchangeGroupId,
       };
 
   static Part fromJson(Map<String, dynamic> j) {
@@ -1143,8 +1205,42 @@ class Part {
       side: j['side'] as String?,
       dateListed: j['dateListed'] == null ? null : DateTime.tryParse(j['dateListed'] as String),
       dateSold: j['dateSold'] == null ? null : DateTime.tryParse(j['dateSold'] as String),
+      interchangeGroupId: j['interchangeGroupId'] as String?,
     );
   }
+}
+
+// ── Interchange group ─────────────────────────────────────────────────────────
+class InterchangeGroup {
+  final String id;
+  String label;        // optional name e.g. "Brake Light Switch"
+  List<String> numbers; // all known part numbers for this component
+  DateTime createdAt;
+  DateTime? updatedAt;
+
+  InterchangeGroup({
+    required this.id,
+    required this.label,
+    required this.numbers,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'label': label,
+    'numbers': numbers,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt?.toIso8601String(),
+  };
+
+  static InterchangeGroup fromJson(Map<String, dynamic> j) => InterchangeGroup(
+    id: j['id'] as String,
+    label: (j['label'] as String?) ?? '',
+    numbers: (j['numbers'] as List<dynamic>? ?? []).map((e) => e as String).toList(),
+    createdAt: DateTime.tryParse((j['createdAt'] as String?) ?? '') ?? DateTime.now(),
+    updatedAt: j['updatedAt'] == null ? null : DateTime.tryParse(j['updatedAt'] as String),
+  );
 }
 
 class Vehicle {
@@ -4274,6 +4370,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     with WidgetsBindingObserver {
   late Vehicle _v;
   final Set<String> _sideFilters = {};
+  bool _showUnpricedOnly = false;
   bool _selectMode = false;
   final Set<String> _selectedPartIds = {};
   final _searchCtrl = TextEditingController();
@@ -4875,6 +4972,11 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       parts = parts.where((p) => p.side != null && _sideFilters.contains(p.side)).toList();
     }
 
+    // Apply unpriced filter
+    if (_showUnpricedOnly) {
+      parts = parts.where((p) => p.askingPriceCents == null).toList();
+    }
+
     // Apply search query
     if (_searchQuery.isNotEmpty) {
       // _searchQuery is already lowercase (set in _onSearchChanged).
@@ -5170,6 +5272,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
             _buildStatusSummaryStrip(needsAllCount, listedAllCount, soldAllCount),
           if (_v.parts.isNotEmpty) const SizedBox(height: 12),
 
+          // ── Revenue snapshot ──────────────────────────────────────────
+          _VehicleRevenuePanel(vehicle: _v),
+          const SizedBox(height: 12),
+
           // ── Side filter chips ─────────────────────────────────────────
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -5183,6 +5289,38 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
               sideChip('Front', 'Front'),
               const SizedBox(width: 6),
               sideChip('Rear', 'Rear'),
+              const SizedBox(width: 6),
+              sideChip('Pair', 'Pair'),
+              const SizedBox(width: 6),
+              sideChip('Set', 'Set'),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: () => setState(() => _showUnpricedOnly = !_showUnpricedOnly),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: _showUnpricedOnly
+                        ? const Color(0xFFE8700A).withValues(alpha: 0.25)
+                        : Colors.white.withValues(alpha: 0.05),
+                    border: Border.all(
+                      color: _showUnpricedOnly
+                          ? const Color(0xFFE8700A).withValues(alpha: 0.6)
+                          : Colors.white.withValues(alpha: 0.10),
+                    ),
+                  ),
+                  child: Text(
+                    'No Price',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _showUnpricedOnly
+                          ? const Color(0xFFE8700A)
+                          : Colors.white.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+              ),
             ]),
           ),
           const SizedBox(height: 10),
@@ -5449,6 +5587,212 @@ class PartListRow extends StatelessWidget {
   }
 }
 
+// ── Vehicle Revenue Panel ─────────────────────────────────────────────────────
+
+class _VehicleRevenuePanel extends StatefulWidget {
+  final Vehicle vehicle;
+  const _VehicleRevenuePanel({required this.vehicle});
+
+  @override
+  State<_VehicleRevenuePanel> createState() => _VehicleRevenuePanelState();
+}
+
+class _VehicleRevenuePanelState extends State<_VehicleRevenuePanel> {
+  bool _expanded = false;
+
+  static String _fmt(int cents) {
+    final dollars = (cents / 100).round();
+    if (dollars >= 1000) {
+      final thousands = dollars ~/ 1000;
+      final rem = dollars % 1000;
+      return '\$$thousands,${rem.toString().padLeft(3, '0')}';
+    }
+    return '\$$dollars';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = widget.vehicle;
+    final unsold = v.parts
+        .where((p) => p.state == PartState.removed || p.state == PartState.listed)
+        .toList();
+    final soldParts = v.parts.where((p) => p.state == PartState.sold).toList();
+
+    if (unsold.isEmpty && soldParts.isEmpty) return const SizedBox.shrink();
+
+    final potentialCents = unsold.fold<int>(0, (s, p) => s + (p.askingPriceCents ?? 0));
+    final needsListCents = v.parts
+        .where((p) => p.state == PartState.removed)
+        .fold<int>(0, (s, p) => s + (p.askingPriceCents ?? 0));
+    final listedCents = v.parts
+        .where((p) => p.state == PartState.listed)
+        .fold<int>(0, (s, p) => s + (p.askingPriceCents ?? 0));
+    final soldCents   = soldParts.fold<int>(0, (s, p) => s + (p.salePriceCents ?? 0));
+    final totalKnown  = soldCents + potentialCents;
+    final captureRate = totalKnown > 0 ? soldCents / totalKnown : 0.0;
+    final unpricedCount = unsold.where((p) => p.askingPriceCents == null).length;
+
+    // Category breakdown
+    final catTotals = <String, int>{};
+    for (final p in unsold) {
+      if ((p.askingPriceCents ?? 0) == 0) continue;
+      final cat = p.category ?? 'Uncategorised';
+      catTotals[cat] = (catTotals[cat] ?? 0) + p.askingPriceCents!;
+    }
+    final topCats = (catTotals.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).take(5).toList();
+    final maxCat  = topCats.isEmpty ? 1 : topCats.first.value;
+
+    const accent   = Color(0xFFE8700A);
+    const green    = Color(0xFF4CAF50);
+    const needsCol = Color(0xFFE8400A);
+
+    return AppCard(
+      padding: const EdgeInsets.all(0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kRadius),
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header row (always visible) ───────────────────────────
+              Row(children: [
+                const Icon(Icons.monetization_on_outlined, size: 16, color: accent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Potential Revenue',
+                          style: TextStyle(fontSize: 11, color: Colors.white54)),
+                      Text(_fmt(potentialCents),
+                          style: const TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w800, color: accent)),
+                    ],
+                  ),
+                ),
+                if (totalKnown > 0) ...[
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('${(captureRate * 100).toStringAsFixed(0)}% captured',
+                          style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                      Text(_fmt(soldCents),
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700, color: green)),
+                    ],
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18, color: Colors.white38),
+              ]),
+
+              // ── Progress bar (always visible if there's data) ─────────
+              if (totalKnown > 0) ...[
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: captureRate,
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    valueColor: const AlwaysStoppedAnimation(green),
+                    minHeight: 5,
+                  ),
+                ),
+              ],
+
+              // ── Expanded detail ───────────────────────────────────────
+              if (_expanded) ...[
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: Color(0xFF2A2A2A)),
+                const SizedBox(height: 14),
+
+                // Mini stat row
+                Row(children: [
+                  if (needsListCents > 0) ...[
+                    _MiniStat('Needs Listing', _fmt(needsListCents), needsCol),
+                    const SizedBox(width: 20),
+                  ],
+                  if (listedCents > 0) ...[
+                    _MiniStat('Listed', _fmt(listedCents), Colors.green),
+                    const SizedBox(width: 20),
+                  ],
+                  if (soldCents > 0)
+                    _MiniStat('Sold', _fmt(soldCents), green),
+                ]),
+
+                // Category bars
+                if (topCats.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text('VALUE BY CATEGORY',
+                      style: TextStyle(fontSize: 10, color: Colors.white38, letterSpacing: 0.7)),
+                  const SizedBox(height: 8),
+                  ...topCats.map((e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(children: [
+                      SizedBox(
+                        width: 90,
+                        child: Text(e.key,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12)),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: e.value / maxCat,
+                            backgroundColor: Colors.white.withValues(alpha: 0.06),
+                            valueColor: AlwaysStoppedAnimation(accent.withValues(alpha: 0.7)),
+                            minHeight: 7,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(_fmt(e.value),
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w600)),
+                    ]),
+                  )),
+                ],
+
+                // Unpriced warning
+                if (unpricedCount > 0) ...[
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    Icon(Icons.info_outline, size: 12, color: Colors.white.withValues(alpha: 0.3)),
+                    const SizedBox(width: 5),
+                    Text('$unpricedCount part${unpricedCount == 1 ? '' : 's'} unpriced — not counted',
+                        style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3))),
+                  ]),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _MiniStat(this.label, this.value, this.color);
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
+      Text(label, style: const TextStyle(fontSize: 10, color: Colors.white38)),
+    ],
+  );
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // PartDetailScreen  (v1.2)
 // Full-screen read-only view of a part with stock ID + source vehicle info.
@@ -5676,6 +6020,22 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
                     value: part.partNumber!,
                     valueStyle: const TextStyle(fontFamily: 'monospace'),
                   ),
+
+                // Interchange group — show all cross-reference numbers
+                Builder(builder: (context) {
+                  final group = InterchangeService.instance.groupById(part.interchangeGroupId);
+                  if (group == null) return const SizedBox.shrink();
+                  final others = group.numbers
+                      .where((n) => normalizePartNumber(n) != normalizePartNumber(part.partNumber ?? ''))
+                      .toList();
+                  if (others.isEmpty) return const SizedBox.shrink();
+                  return _DetailRow(
+                    icon: Icons.compare_arrows_outlined,
+                    label: 'Also known as',
+                    value: others.join(' · '),
+                    valueStyle: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  );
+                }),
 
                 if ((part.location ?? '').trim().isNotEmpty)
                   _DetailRow(
@@ -6293,15 +6653,18 @@ class _AddPartScreenState extends State<AddPartScreen> {
   final _qtyCtrl = TextEditingController(text: '1');
   final _notesCtrl = TextEditingController();
   final _linkCtrl = TextEditingController();
-  final _conditionCtrl = TextEditingController();
   final _saleCtrl = TextEditingController();
   final _nameFocusNode = FocusNode();
   final _pnFocusNode = FocusNode();
   bool _showLink = false;
   String? _category;
+  String? _condition;
   String? _suggestedCategory;
-  String? _side;
-  List<String> _categories = List.from(kPartCategories);
+  final Set<String> _sides = {};
+  List<String> _categories  = List.from(kPartCategories);
+  List<String> _locations   = List.from(kPartLocations);
+  List<String> _conditions  = List.from(kConditions);
+  String? _interchangeGroupId;
 
   DateTime? _dateListed;
   DateTime? _dateSold;
@@ -6340,6 +6703,12 @@ class _AddPartScreenState extends State<AddPartScreen> {
     PartCategoryStorage.load().then((cats) {
       if (mounted) setState(() => _categories = cats);
     }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
+    PartLocationStorage.load().then((locs) {
+      if (mounted) setState(() => _locations = locs);
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PartLocationStorage.load failed: $e'); });
+    ConditionStorage.load().then((conds) {
+      if (mounted) setState(() => _conditions = conds);
+    }).catchError((Object e) { if (kDebugMode) debugPrint('ConditionStorage.load failed: $e'); });
     _nameFocusNode.addListener(_onNameFocusChanged);
     _pnFocusNode.addListener(_onPnFocusChanged);
 
@@ -6379,7 +6748,6 @@ class _AddPartScreenState extends State<AddPartScreen> {
     _qtyCtrl.dispose();
     _notesCtrl.dispose();
     _linkCtrl.dispose();
-    _conditionCtrl.dispose();
     _saleCtrl.dispose();
     _nameFocusNode.dispose();
     _pnFocusNode.dispose();
@@ -6427,9 +6795,9 @@ class _AddPartScreenState extends State<AddPartScreen> {
     if (name.isEmpty) return;
 
     // Auto-suggest side from name keywords if not already set.
-    if (_side == null) {
+    if (_sides.isEmpty) {
       final detectedSide = _detectSideFromName(name);
-      if (detectedSide != null) setState(() => _side = detectedSide);
+      if (detectedSide != null) setState(() => _sides.add(detectedSide));
     }
 
     final match = _findBestMatchingPart(name);
@@ -6444,9 +6812,9 @@ class _AddPartScreenState extends State<AddPartScreen> {
           _category = match.category;
           filled = true;
         }
-        if (_conditionCtrl.text.isEmpty && match.partCondition != null) {
-          _conditionCtrl.text = match.partCondition!;
-          filled = true;
+        if (_condition == null && match.partCondition != null) {
+          final c = match.partCondition!;
+          if (_conditions.contains(c)) { _condition = c; filled = true; }
         }
         if (_pnCtrl.text.isEmpty && match.partNumber != null) {
           _pnCtrl.text = match.partNumber!;
@@ -6507,12 +6875,12 @@ class _AddPartScreenState extends State<AddPartScreen> {
         _category = b.category;
         filled = true;
       }
-      if (_conditionCtrl.text.isEmpty && b.partCondition != null) {
-        _conditionCtrl.text = b.partCondition!;
-        filled = true;
+      if (_condition == null && b.partCondition != null) {
+        final c = b.partCondition!;
+        if (_conditions.contains(c)) { _condition = c; filled = true; }
       }
-      if (_side == null && b.side != null) {
-        _side = b.side;
+      if (_sides.isEmpty && b.side != null) {
+        _sides.addAll(b.side!.split(' ').where((s) => s.isNotEmpty));
         filled = true;
       }
       if (_locCtrl.text.isEmpty && (b.location ?? '').isNotEmpty) {
@@ -6619,7 +6987,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
     final qty = int.tryParse(_qtyCtrl.text.trim()) ?? 1;
     final notes = _notesCtrl.text.trim();
     final loc = _locCtrl.text.trim();
-    final condition = _conditionCtrl.text.trim();
+    final condition = _condition;
 
     // Optional link — saved as a Listing record but NOT marked live.
     // User can mark it live via the part's links screen when ready.
@@ -6670,8 +7038,9 @@ class _AddPartScreenState extends State<AddPartScreen> {
         vehicleDrivetrain: _vDrivetrain,
         vehicleUsageValue: _vUsageValue,
         vehicleUsageUnit: _vUsageUnit,
-        partCondition: condition.isEmpty ? null : condition,
-        side: _side,
+        partCondition: condition,
+        side: _sides.isEmpty ? null : (_sides.toList()..sort()).join(' '),
+        interchangeGroupId: _interchangeGroupId,
         dateListed: i == 0 ? dateListed : null,
         dateSold: _dateSold,
       );
@@ -6740,9 +7109,9 @@ class _AddPartScreenState extends State<AddPartScreen> {
                             hintText: 'Optional — autofills from history',
                             prefixIcon: Icon(Icons.confirmation_number_outlined),
                           ),
-                          autofocus: true,
                           textInputAction: TextInputAction.next,
-                          inputFormatters: [LengthLimitingTextInputFormatter(100)],
+                          textCapitalization: TextCapitalization.characters,
+                          inputFormatters: [LengthLimitingTextInputFormatter(100), _UpperCaseFormatter()],
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -6762,6 +7131,13 @@ class _AddPartScreenState extends State<AddPartScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  // ── Interchange group ─────────────────────────────────
+                  const SizedBox(height: 10),
+                  _InterchangeGroupPicker(
+                    partNumber: _pnCtrl.text,
+                    selectedGroupId: _interchangeGroupId,
+                    onChanged: (id) => setState(() => _interchangeGroupId = id),
                   ),
                   // ── Recent part shortcuts ─────────────────────────────
                   if (_recentPartNames.isNotEmpty) ...[
@@ -6806,16 +7182,19 @@ class _AddPartScreenState extends State<AddPartScreen> {
                     inputFormatters: [LengthLimitingTextInputFormatter(150)],
                   ),
                   const SizedBox(height: 12),
-                  // ── Condition (buffer — gives category suggestion time to appear) ──
-                  TextFormField(
-                    controller: _conditionCtrl,
+                  // ── Condition ──────────────────────────────────────────
+                  DropdownButtonFormField<String>(
+                    initialValue: _conditions.contains(_condition) ? _condition : null,
                     decoration: const InputDecoration(
                       labelText: 'Condition (optional)',
-                      hintText: 'Good / Used / Damaged',
                       prefixIcon: Icon(Icons.stars_outlined),
                     ),
-                    textCapitalization: TextCapitalization.sentences,
-                    textInputAction: TextInputAction.next,
+                    hint: const Text('Select condition'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('None')),
+                      ..._conditions.map((c) => DropdownMenuItem(value: c, child: Text(c))),
+                    ],
+                    onChanged: (v) => setState(() => _condition = v),
                   ),
                   const SizedBox(height: 12),
                   // ── Category ──────────────────────────────────────────
@@ -6857,15 +7236,17 @@ class _AddPartScreenState extends State<AddPartScreen> {
                   divider,
 
                   // ── Location & Pricing ────────────────────────────────
-                  TextFormField(
-                    controller: _locCtrl,
+                  DropdownButtonFormField<String>(
+                    initialValue: _locations.contains(_locCtrl.text) ? _locCtrl.text : null,
                     decoration: const InputDecoration(
                       labelText: 'Location',
-                      hintText: 'Shelf A3 / Bay 2 / Tote 7',
                       prefixIcon: Icon(Icons.place_outlined),
                     ),
-                    textInputAction: TextInputAction.next,
-                    inputFormatters: [LengthLimitingTextInputFormatter(150)],
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('None')),
+                      ..._locations.map((l) => DropdownMenuItem(value: l, child: Text(l))),
+                    ],
+                    onChanged: (v) => setState(() => _locCtrl.text = v ?? ''),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -6906,10 +7287,10 @@ class _AddPartScreenState extends State<AddPartScreen> {
                         SizedBox(width: 6),
                         Text('Side:', style: TextStyle(fontSize: 13, color: Colors.white54)),
                       ]),
-                      ...['Left', 'Right', 'Front', 'Rear'].map((s) => ChoiceChip(
+                      ...['Left', 'Right', 'Front', 'Rear', 'Pair', 'Set'].map((s) => FilterChip(
                         label: Text(s, style: const TextStyle(fontSize: 12)),
-                        selected: _side == s,
-                        onSelected: (v) => setState(() => _side = v ? s : null),
+                        selected: _sides.contains(s),
+                        onSelected: (v) => setState(() => v ? _sides.add(s) : _sides.remove(s)),
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                       )),
                     ],
@@ -7117,16 +7498,19 @@ class _EditPartDialogState extends State<EditPartDialog> {
   final _formKey = GlobalKey<FormState>();
 
   late Part _p;
-  List<String> _categories = List.from(kPartCategories);
-  String? _side;
+  List<String> _categories  = List.from(kPartCategories);
+  List<String> _locations   = List.from(kPartLocations);
+  List<String> _conditions  = List.from(kConditions);
+  String? _condition;
+  String? _location;
+  final Set<String> _sides = {};
+  String? _interchangeGroupId;
 
   late final TextEditingController _nameCtrl;
-  late final TextEditingController _locCtrl;
   late final TextEditingController _askCtrl;
   late final TextEditingController _pnCtrl;
   late final TextEditingController _qtyCtrl;
   late final TextEditingController _notesCtrl;
-  late final TextEditingController _conditionCtrl;
   late final TextEditingController _saleCtrl;
 
   DateTime? _dateListed;
@@ -7139,32 +7523,37 @@ class _EditPartDialogState extends State<EditPartDialog> {
     PartCategoryStorage.load().then((cats) {
       if (mounted) setState(() => _categories = cats);
     }).catchError((Object e) { if (kDebugMode) debugPrint('PartCategoryStorage.load failed: $e'); });
+    PartLocationStorage.load().then((locs) {
+      if (mounted) setState(() => _locations = locs);
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PartLocationStorage.load failed: $e'); });
+    ConditionStorage.load().then((conds) {
+      if (mounted) setState(() => _conditions = conds);
+    }).catchError((Object e) { if (kDebugMode) debugPrint('ConditionStorage.load failed: $e'); });
     _nameCtrl = TextEditingController(text: _p.name);
-    _locCtrl = TextEditingController(text: _p.location ?? '');
+    _location  = _p.location;
+    _condition = _p.partCondition;
     _askCtrl = TextEditingController(
       text: _p.askingPriceCents == null ? '' : (_p.askingPriceCents! / 100).toStringAsFixed(2),
     );
     _pnCtrl = TextEditingController(text: _p.partNumber ?? '');
     _qtyCtrl = TextEditingController(text: _p.qty.toString());
     _notesCtrl = TextEditingController(text: _p.notes ?? '');
-    _conditionCtrl = TextEditingController(text: _p.partCondition ?? '');
     _saleCtrl = TextEditingController(
       text: _p.salePriceCents == null ? '' : (_p.salePriceCents! / 100).toStringAsFixed(2),
     );
     _dateListed = _p.dateListed;
     _dateSold = _p.dateSold;
-    _side = _p.side;
+    _sides.addAll((_p.side ?? '').split(' ').where((s) => s.isNotEmpty));
+    _interchangeGroupId = _p.interchangeGroupId;
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _locCtrl.dispose();
     _askCtrl.dispose();
     _pnCtrl.dispose();
     _qtyCtrl.dispose();
     _notesCtrl.dispose();
-    _conditionCtrl.dispose();
     _saleCtrl.dispose();
     super.dispose();
   }
@@ -7247,8 +7636,7 @@ class _EditPartDialogState extends State<EditPartDialog> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     _p.name = _nameCtrl.text.trim();
-    final loc = _locCtrl.text.trim();
-    _p.location = loc.isEmpty ? null : loc;
+    _p.location = _location;
 
     _p.askingPriceCents = parseMoneyToCents(_askCtrl.text);
     _p.salePriceCents = parseMoneyToCents(_saleCtrl.text);
@@ -7262,12 +7650,12 @@ class _EditPartDialogState extends State<EditPartDialog> {
     final notes = _notesCtrl.text.trim();
     _p.notes = notes.isEmpty ? null : notes;
 
-    final condition = _conditionCtrl.text.trim();
-    _p.partCondition = condition.isEmpty ? null : condition;
+    _p.partCondition = _condition;
 
     _p.dateListed = _dateListed;
     _p.dateSold = _dateSold;
-    _p.side = _side;
+    _p.side = _sides.isEmpty ? null : (_sides.toList()..sort()).join(' ');
+    _p.interchangeGroupId = _interchangeGroupId;
     _p.updatedAt = DateTime.now();
 
     normalizePartStateFromListings(_p);
@@ -7309,7 +7697,14 @@ class _EditPartDialogState extends State<EditPartDialog> {
               TextFormField(
                 controller: _pnCtrl,
                 decoration: const InputDecoration(labelText: 'Part number (optional)'),
-                inputFormatters: [LengthLimitingTextInputFormatter(100)],
+                textCapitalization: TextCapitalization.characters,
+                inputFormatters: [LengthLimitingTextInputFormatter(100), _UpperCaseFormatter()],
+              ),
+              const SizedBox(height: 10),
+              _InterchangeGroupPicker(
+                partNumber: _pnCtrl.text,
+                selectedGroupId: _interchangeGroupId,
+                onChanged: (id) => setState(() => _interchangeGroupId = id),
               ),
               const SizedBox(height: 10),
               TextFormField(
@@ -7323,10 +7718,16 @@ class _EditPartDialogState extends State<EditPartDialog> {
                 },
               ),
               const SizedBox(height: 10),
-              TextFormField(
-                controller: _locCtrl,
+              DropdownButtonFormField<String>(
+                initialValue: _location,
                 decoration: const InputDecoration(labelText: 'Location (optional)'),
-                inputFormatters: [LengthLimitingTextInputFormatter(150)],
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('None')),
+                  if (_location != null && !_locations.contains(_location))
+                    DropdownMenuItem(value: _location, child: Text(_location!)),
+                  ..._locations.map((l) => DropdownMenuItem(value: l, child: Text(l))),
+                ],
+                onChanged: (v) => setState(() => _location = v),
               ),
               const SizedBox(height: 10),
               TextFormField(
@@ -7347,13 +7748,19 @@ class _EditPartDialogState extends State<EditPartDialog> {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
               ),
               const SizedBox(height: 10),
-              TextFormField(
-                controller: _conditionCtrl,
+              DropdownButtonFormField<String>(
+                initialValue: _condition,
                 decoration: const InputDecoration(
                   labelText: 'Condition (optional)',
-                  hintText: 'Good / Used / Damaged',
                 ),
-                textCapitalization: TextCapitalization.sentences,
+                hint: const Text('Select condition'),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('None')),
+                  if (_condition != null && !_conditions.contains(_condition))
+                    DropdownMenuItem(value: _condition, child: Text(_condition!)),
+                  ..._conditions.map((c) => DropdownMenuItem(value: c, child: Text(c))),
+                ],
+                onChanged: (v) => setState(() => _condition = v),
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -7362,10 +7769,10 @@ class _EditPartDialogState extends State<EditPartDialog> {
                 runSpacing: 4,
                 children: [
                   const Text('Side:', style: TextStyle(fontSize: 13, color: Colors.white54)),
-                  ...['Left', 'Right', 'Front', 'Rear'].map((s) => ChoiceChip(
+                  ...['Left', 'Right', 'Front', 'Rear', 'Pair', 'Set'].map((s) => FilterChip(
                     label: Text(s, style: const TextStyle(fontSize: 12)),
-                    selected: _side == s,
-                    onSelected: (v) => setState(() => _side = v ? s : null),
+                    selected: _sides.contains(s),
+                    onSelected: (v) => setState(() => v ? _sides.add(s) : _sides.remove(s)),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                   )),
                 ],
@@ -8927,6 +9334,410 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Manage Part Locations Screen
+// ─────────────────────────────────────────────────────────────────────────────
+class ManageLocationsScreen extends StatefulWidget {
+  const ManageLocationsScreen({super.key});
+
+  @override
+  State<ManageLocationsScreen> createState() => _ManageLocationsScreenState();
+}
+
+class _ManageLocationsScreenState extends State<ManageLocationsScreen> {
+  List<String> _locations = [];
+  final _addCtrl = TextEditingController();
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    PartLocationStorage.load().then((locs) {
+      if (mounted) setState(() { _locations = locs; _loading = false; });
+    }).catchError((Object e) { if (kDebugMode) debugPrint('PartLocationStorage.load failed: $e'); });
+  }
+
+  @override
+  void dispose() {
+    _addCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    await PartLocationStorage.save(_locations);
+  }
+
+  void _addLocation() {
+    final name = _addCtrl.text.trim();
+    if (name.isEmpty || name.length > 50 || _locations.contains(name)) return;
+    setState(() => _locations.add(name));
+    _addCtrl.clear();
+    _save();
+  }
+
+  void _delete(int index) {
+    setState(() => _locations.removeAt(index));
+    _save();
+  }
+
+  Future<void> _renameLocation(int index, String current) async {
+    final ctrl = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Location'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Location name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE8700A)),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (result == null || result.isEmpty || result == current) return;
+    setState(() => _locations[index] = result);
+    _save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Part Locations'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await PartLocationStorage.save(List.from(kPartLocations));
+              final locs = await PartLocationStorage.load();
+              if (mounted) setState(() => _locations = locs);
+            },
+            child: const Text('Reset', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                // ── Add new location ───────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _addCtrl,
+                          decoration: const InputDecoration(
+                            hintText: 'New location name…',
+                            prefixIcon: Icon(Icons.add),
+                            isDense: true,
+                          ),
+                          textCapitalization: TextCapitalization.words,
+                          onSubmitted: (_) => _addLocation(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed: _addLocation,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFE8700A),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        ),
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: kPad),
+                  child: Text(
+                    'Drag ≡ to reorder  ·  tap ✎ to rename  ·  tap 🗑 to delete',
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // ── Reorderable list ───────────────────────────────────
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, 32),
+                    buildDefaultDragHandles: false,
+                    itemCount: _locations.length,
+                    onReorder: (oldIndex, newIndex) {
+                      setState(() {
+                        if (newIndex > oldIndex) newIndex--;
+                        final item = _locations.removeAt(oldIndex);
+                        _locations.insert(newIndex, item);
+                      });
+                      _save();
+                    },
+                    itemBuilder: (context, index) {
+                      final loc = _locations[index];
+                      return Container(
+                        key: ValueKey(loc),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withValues(alpha: 0.05),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                        ),
+                        child: Row(
+                          children: [
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                                child: Icon(Icons.drag_handle, color: Colors.white38, size: 20),
+                              ),
+                            ),
+                            Container(
+                              width: 3,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8700A),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(loc, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              color: Colors.white38,
+                              tooltip: 'Rename',
+                              onPressed: () => _renameLocation(index, loc),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              color: Colors.red.withValues(alpha: 0.6),
+                              tooltip: 'Delete',
+                              onPressed: () => _delete(index),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manage Part Conditions Screen
+// ─────────────────────────────────────────────────────────────────────────────
+class ManageConditionsScreen extends StatefulWidget {
+  const ManageConditionsScreen({super.key});
+
+  @override
+  State<ManageConditionsScreen> createState() => _ManageConditionsScreenState();
+}
+
+class _ManageConditionsScreenState extends State<ManageConditionsScreen> {
+  List<String> _conditions = [];
+  final _addCtrl = TextEditingController();
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    ConditionStorage.load().then((conds) {
+      if (mounted) setState(() { _conditions = conds; _loading = false; });
+    }).catchError((Object e) { if (kDebugMode) debugPrint('ConditionStorage.load failed: $e'); });
+  }
+
+  @override
+  void dispose() {
+    _addCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    await ConditionStorage.save(_conditions);
+  }
+
+  void _addCondition() {
+    final name = _addCtrl.text.trim();
+    if (name.isEmpty || name.length > 50 || _conditions.contains(name)) return;
+    setState(() => _conditions.add(name));
+    _addCtrl.clear();
+    _save();
+  }
+
+  void _delete(int index) {
+    setState(() => _conditions.removeAt(index));
+    _save();
+  }
+
+  Future<void> _renameCondition(int index, String current) async {
+    final ctrl = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Condition'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Condition name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE8700A)),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (result == null || result.isEmpty || result == current) return;
+    setState(() => _conditions[index] = result);
+    _save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Part Conditions'),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await ConditionStorage.save(List.from(kConditions));
+              final conds = await ConditionStorage.load();
+              if (mounted) setState(() => _conditions = conds);
+            },
+            child: const Text('Reset', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _addCtrl,
+                          decoration: const InputDecoration(
+                            hintText: 'New condition name…',
+                            prefixIcon: Icon(Icons.add),
+                            isDense: true,
+                          ),
+                          textCapitalization: TextCapitalization.words,
+                          onSubmitted: (_) => _addCondition(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed: _addCondition,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFE8700A),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        ),
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: kPad),
+                  child: Text(
+                    'Drag ≡ to reorder  ·  tap ✎ to rename  ·  tap 🗑 to delete',
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, 32),
+                    buildDefaultDragHandles: false,
+                    itemCount: _conditions.length,
+                    onReorder: (oldIndex, newIndex) {
+                      setState(() {
+                        if (newIndex > oldIndex) newIndex--;
+                        final item = _conditions.removeAt(oldIndex);
+                        _conditions.insert(newIndex, item);
+                      });
+                      _save();
+                    },
+                    itemBuilder: (context, index) {
+                      final cond = _conditions[index];
+                      return Container(
+                        key: ValueKey(cond),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.white.withValues(alpha: 0.05),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                        ),
+                        child: Row(
+                          children: [
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                                child: Icon(Icons.drag_handle, color: Colors.white38, size: 20),
+                              ),
+                            ),
+                            Container(
+                              width: 3,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8700A),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(cond, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              color: Colors.white38,
+                              tooltip: 'Rename',
+                              onPressed: () => _renameCondition(index, cond),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              color: Colors.red.withValues(alpha: 0.6),
+                              tooltip: 'Delete',
+                              onPressed: () => _delete(index),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Manage Listing Platforms Screen
 // ─────────────────────────────────────────────────────────────────────────────
 class ManagePlatformsScreen extends StatefulWidget {
@@ -9371,6 +10182,7 @@ class _SettingsTabState extends State<SettingsTab> {
                                   TextButton(
                                     onPressed: () async {
                                       await auth.signOut();
+                                      InterchangeService.instance.clear();
                                       if (context.mounted) setState(() {});
                                     },
                                     child: const Text('Sign Out', style: TextStyle(color: Colors.white38)),
@@ -9528,6 +10340,60 @@ class _SettingsTabState extends State<SettingsTab> {
                       children: [
                         Text('Part Categories', style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Add, remove and reorder categories', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.white24),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Part Locations ─────────────────────────────────────────
+          const SizedBox(height: kPad),
+          AppCard(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(kRadius),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ManageLocationsScreen()),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.place_outlined, color: Color(0xFFE8700A)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Part Locations', style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('Add, remove and reorder storage locations', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.white24),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Part Conditions ────────────────────────────────────────
+          const SizedBox(height: kPad),
+          AppCard(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(kRadius),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ManageConditionsScreen()),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.stars_outlined, color: Color(0xFFE8700A)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Part Conditions', style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('Add, remove and reorder condition options', style: TextStyle(color: Colors.white38, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -11154,6 +12020,837 @@ class _PartsDataScreenState extends State<PartsDataScreen> {
             fontSize: 13,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── InterchangeService ────────────────────────────────────────────────────────
+// In-memory store for interchange groups, backed by SQLite + Firestore.
+
+class InterchangeService extends ChangeNotifier {
+  static final InterchangeService instance = InterchangeService._();
+  InterchangeService._();
+
+  List<InterchangeGroup> _groups = [];
+  List<InterchangeGroup> get groups => List.unmodifiable(_groups);
+
+  Future<void> load(String? uid) async {
+    _groups = await VehicleStore.loadInterchangeGroups();
+    // Merge any remote groups the device doesn't have yet.
+    if (uid != null) {
+      try {
+        final remote = await FirestoreService.loadInterchangeGroups(uid);
+        for (final json in remote) {
+          final g = InterchangeGroup.fromJson(json);
+          if (!_groups.any((x) => x.id == g.id)) {
+            _groups.add(g);
+            await VehicleStore.upsertInterchangeGroup(g);
+          }
+        }
+      } catch (_) {}
+    }
+    notifyListeners();
+  }
+
+  void clear() {
+    _groups = [];
+    notifyListeners();
+  }
+
+  /// Find the group that contains [partNumber], or null.
+  InterchangeGroup? groupForNumber(String? partNumber) {
+    if (partNumber == null || partNumber.isEmpty) return null;
+    final norm = normalizePartNumber(partNumber);
+    try {
+      return _groups.firstWhere(
+        (g) => g.numbers.any((n) => normalizePartNumber(n) == norm),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  InterchangeGroup? groupById(String? id) {
+    if (id == null) return null;
+    try { return _groups.firstWhere((g) => g.id == id); } catch (_) { return null; }
+  }
+
+  Future<InterchangeGroup> createGroup({required String label, required List<String> numbers}) async {
+    final g = InterchangeGroup(
+      id: newId(), label: label, numbers: numbers, createdAt: DateTime.now(),
+    );
+    _groups.insert(0, g);
+    await VehicleStore.upsertInterchangeGroup(g);
+    final uid = auth.uid;
+    if (uid != null) FirestoreService.upsertInterchangeGroup(uid, g.toJson());
+    notifyListeners();
+    return g;
+  }
+
+  Future<void> updateGroup(InterchangeGroup g) async {
+    g.updatedAt = DateTime.now();
+    final idx = _groups.indexWhere((x) => x.id == g.id);
+    if (idx >= 0) _groups[idx] = g;
+    await VehicleStore.upsertInterchangeGroup(g);
+    final uid = auth.uid;
+    if (uid != null) FirestoreService.upsertInterchangeGroup(uid, g.toJson());
+    notifyListeners();
+  }
+
+  Future<void> deleteGroup(String id) async {
+    _groups.removeWhere((g) => g.id == id);
+    await VehicleStore.deleteInterchangeGroup(id);
+    final uid = auth.uid;
+    if (uid != null) FirestoreService.deleteInterchangeGroup(uid, id);
+    notifyListeners();
+  }
+}
+
+// ── Interchange group picker ──────────────────────────────────────────────────
+// Shown on add/edit part screens. Lets user assign a part to an interchange
+// group (cross-reference library) or create a new one.
+
+class _InterchangeGroupPicker extends StatelessWidget {
+  final String partNumber;       // current part number (used to suggest matches)
+  final String? selectedGroupId;
+  final ValueChanged<String?> onChanged;
+
+  const _InterchangeGroupPicker({
+    required this.partNumber,
+    required this.selectedGroupId,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: InterchangeService.instance,
+      builder: (context, _) {
+        final svc = InterchangeService.instance;
+        final group = svc.groupById(selectedGroupId);
+        return InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => _showPicker(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: group != null
+                    ? const Color(0xFFE8700A).withValues(alpha: 0.5)
+                    : Colors.white.withValues(alpha: 0.12),
+              ),
+              color: group != null
+                  ? const Color(0xFFE8700A).withValues(alpha: 0.06)
+                  : Colors.transparent,
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.compare_arrows_outlined,
+                    size: 16,
+                    color: group != null ? const Color(0xFFE8700A) : Colors.white38),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: group == null
+                      ? const Text('Interchange group — tap to assign',
+                          style: TextStyle(color: Colors.white38, fontSize: 13))
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              group.label.isEmpty ? 'Interchange group' : group.label,
+                              style: const TextStyle(
+                                  color: Color(0xFFE8700A),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13),
+                            ),
+                            Text(
+                              group.numbers.join(' · '),
+                              style: const TextStyle(color: Colors.white54, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                ),
+                Icon(Icons.edit_outlined,
+                    size: 14,
+                    color: group != null ? const Color(0xFFE8700A) : Colors.white24),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _InterchangeGroupSheet(
+        partNumber: partNumber,
+        selectedGroupId: selectedGroupId,
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+// Bottom sheet for picking / creating interchange groups.
+class _InterchangeGroupSheet extends StatefulWidget {
+  final String partNumber;
+  final String? selectedGroupId;
+  final ValueChanged<String?> onChanged;
+  const _InterchangeGroupSheet({
+    required this.partNumber,
+    required this.selectedGroupId,
+    required this.onChanged,
+  });
+
+  @override
+  State<_InterchangeGroupSheet> createState() => _InterchangeGroupSheetState();
+}
+
+class _InterchangeGroupSheetState extends State<_InterchangeGroupSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
+  List<InterchangeGroup> _filtered(List<InterchangeGroup> groups) {
+    if (_query.isEmpty) return groups;
+    final q = _query.toLowerCase();
+    return groups.where((g) =>
+      g.label.toLowerCase().contains(q) ||
+      g.numbers.any((n) => n.toLowerCase().contains(q)),
+    ).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: InterchangeService.instance,
+      builder: (context, _) {
+        final svc = InterchangeService.instance;
+        final groups = _filtered(svc.groups);
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          maxChildSize: 0.92,
+          minChildSize: 0.4,
+          expand: false,
+          builder: (_, ctrl) => Column(children: [
+            const SizedBox(height: 12),
+            Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 12),
+            const Text('Interchange Group', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _searchCtrl,
+                autofocus: false,
+                decoration: const InputDecoration(
+                  hintText: 'Search by label or part number',
+                  prefixIcon: Icon(Icons.search, size: 18),
+                  isDense: true,
+                ),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(
+                controller: ctrl,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  // Remove assignment
+                  if (widget.selectedGroupId != null)
+                    ListTile(
+                      leading: const Icon(Icons.link_off, color: Colors.white38),
+                      title: const Text('Remove from group', style: TextStyle(color: Colors.white54)),
+                      onTap: () { Navigator.pop(context); widget.onChanged(null); },
+                    ),
+                  // Create new group
+                  ListTile(
+                    leading: const Icon(Icons.add_circle_outline, color: Color(0xFFE8700A)),
+                    title: const Text('Create new group', style: TextStyle(color: Color(0xFFE8700A))),
+                    onTap: () => _createGroup(context),
+                  ),
+                  const Divider(height: 16),
+                  if (groups.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('No groups yet. Create one above.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white38)),
+                    )
+                  else
+                    ...groups.map((g) => ListTile(
+                      selected: g.id == widget.selectedGroupId,
+                      selectedColor: const Color(0xFFE8700A),
+                      leading: const Icon(Icons.compare_arrows_outlined),
+                      title: Text(g.label.isEmpty ? '(unlabelled)' : g.label),
+                      subtitle: Text(g.numbers.join(' · '),
+                          style: const TextStyle(fontSize: 11)),
+                      onTap: () { Navigator.pop(context); widget.onChanged(g.id); },
+                    )),
+                ],
+              ),
+            ),
+          ]),
+        );
+      },
+    );
+  }
+
+  Future<void> _createGroup(BuildContext context) async {
+    final labelCtrl = TextEditingController();
+    final numbersCtrl = TextEditingController(
+      text: widget.partNumber.trim().isEmpty ? '' : widget.partNumber.trim(),
+    );
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New interchange group'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: labelCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Label (optional)',
+                hintText: 'e.g. Brake Light Switch',
+              ),
+              textCapitalization: TextCapitalization.sentences,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: numbersCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Part numbers',
+                hintText: 'One per line',
+              ),
+              textCapitalization: TextCapitalization.characters,
+              inputFormatters: [_UpperCaseFormatter()],
+              maxLines: 4,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+        ],
+      ),
+    );
+
+    if (ok != true || !context.mounted) return;
+
+    final numbers = numbersCtrl.text
+        .split('\n')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (numbers.isEmpty) return;
+
+    final group = await InterchangeService.instance.createGroup(
+      label: labelCtrl.text.trim(),
+      numbers: numbers,
+    );
+
+    if (context.mounted) {
+      Navigator.pop(context);
+      widget.onChanged(group.id);
+    }
+  }
+}
+
+// ── Shared formatters ─────────────────────────────────────────────────────────
+
+class _UpperCaseFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) =>
+      newValue.copyWith(text: newValue.text.toUpperCase());
+}
+
+// Home Tab (dashboard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _HomeStats {
+  final int vehicles;
+  final int active;
+  final int parts;
+  final int listed;
+  final int sold;
+  final int scrapped;
+  final int revenueCents;
+  final int costCents;
+  final int needsListingCount;
+  final int potentialRevenueCents;
+  final List<Vehicle> recent;
+
+  const _HomeStats._({
+    required this.vehicles,
+    required this.active,
+    required this.parts,
+    required this.listed,
+    required this.sold,
+    required this.scrapped,
+    required this.revenueCents,
+    required this.costCents,
+    required this.needsListingCount,
+    required this.potentialRevenueCents,
+    required this.recent,
+  });
+
+  factory _HomeStats.from(List<Vehicle> vehicles) {
+    int active = 0, parts = 0, listed = 0, sold = 0, scrapped = 0;
+    int revenue = 0, cost = 0, needsListing = 0, potential = 0;
+
+    for (final v in vehicles) {
+      if (v.status == VehicleStatus.stripping) active++;
+      cost += v.purchasePriceCents ?? 0;
+      revenue += v.soldRevenueCents;
+      for (final p in v.parts) {
+        parts++;
+        if (p.state == PartState.sold) {
+          sold++;
+        } else if (p.state == PartState.scrapped) {
+          scrapped++;
+        } else if (p.hasLiveListings) {
+          listed++;
+        } else {
+          needsListing++;
+          potential += p.askingPriceCents ?? 0;
+        }
+      }
+    }
+
+    final sorted = List<Vehicle>.from(vehicles)
+      ..sort((a, b) => b.acquiredAt.compareTo(a.acquiredAt));
+
+    return _HomeStats._(
+      vehicles: vehicles.length,
+      active: active,
+      parts: parts,
+      listed: listed,
+      sold: sold,
+      scrapped: scrapped,
+      revenueCents: revenue,
+      costCents: cost,
+      needsListingCount: needsListing,
+      potentialRevenueCents: potential,
+      recent: sorted.take(5).toList(),
+    );
+  }
+
+  static String fmt(int cents) => StatsTab._fmtMoney(cents);
+}
+
+class HomeTab extends StatefulWidget {
+  final bool loading;
+  final List<Vehicle> vehicles;
+  final VoidCallback onAddVehicle;
+  final Future<void> Function(Vehicle) onOpenVehicle;
+
+  const HomeTab({
+    super.key,
+    required this.loading,
+    required this.vehicles,
+    required this.onAddVehicle,
+    required this.onOpenVehicle,
+  });
+
+  @override
+  State<HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<HomeTab> {
+  late _HomeStats _stats;
+  final _grain = LeatherGrainPainter();
+
+  @override
+  void initState() {
+    super.initState();
+    _stats = _HomeStats.from(widget.vehicles);
+  }
+
+  @override
+  void didUpdateWidget(HomeTab old) {
+    super.didUpdateWidget(old);
+    if (old.vehicles != widget.vehicles || old.loading != widget.loading) {
+      setState(() => _stats = _HomeStats.from(widget.vehicles));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _stats;
+    return Scaffold(
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF0F1318), Color(0xFF090B0E)],
+              ),
+            ),
+          ),
+          CustomPaint(painter: _grain, size: Size.infinite),
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Header ──────────────────────────────────────────
+                  Row(children: [
+                    const WreckLogLogo(fontSize: 30),
+                    const Spacer(),
+                    FilledButton.icon(
+                      onPressed: widget.onAddVehicle,
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add Vehicle', style: TextStyle(fontSize: 13)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFE8700A),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 20),
+
+                  // ── 8 stat cards ─────────────────────────────────────
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 2.1,
+                    children: [
+                      _StatCard(label: 'Vehicles', value: '${s.vehicles}',
+                          icon: Icons.directions_car_outlined, color: const Color(0xFFE8700A)),
+                      _StatCard(label: 'Active', value: '${s.active}',
+                          icon: Icons.build_outlined, color: Colors.blueAccent),
+                      _StatCard(label: 'Parts', value: '${s.parts}',
+                          icon: Icons.category_outlined, color: Colors.white54),
+                      _StatCard(label: 'Listed', value: '${s.listed}',
+                          icon: Icons.sell_outlined, color: Colors.greenAccent),
+                      _StatCard(label: 'Sold', value: '${s.sold}',
+                          icon: Icons.check_circle_outline, color: Colors.tealAccent),
+                      _StatCard(label: 'Scrapped', value: '${s.scrapped}',
+                          icon: Icons.delete_outline, color: Colors.redAccent),
+                      _StatCard(label: 'Revenue', value: _HomeStats.fmt(s.revenueCents),
+                          icon: Icons.attach_money, color: Colors.greenAccent),
+                      _StatCard(label: 'Cost', value: _HomeStats.fmt(s.costCents),
+                          icon: Icons.shopping_cart_outlined, color: Colors.orangeAccent),
+                    ],
+                  ),
+
+                  // ── Needs listing callout ─────────────────────────────
+                  if (s.needsListingCount > 0) ...[
+                    const SizedBox(height: 12),
+                    _NeedsListingBanner(
+                      count: s.needsListingCount,
+                      potentialCents: s.potentialRevenueCents,
+                    ),
+                  ],
+
+                  // ── Recent vehicles ───────────────────────────────────
+                  if (s.recent.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    const Text('RECENT VEHICLES',
+                        style: TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2)),
+                    const SizedBox(height: 10),
+                    ...s.recent.map((v) => _RecentVehicleRow(
+                          vehicle: v,
+                          onTap: () => widget.onOpenVehicle(v),
+                        )),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Stat card ─────────────────────────────────────────────────────────────────
+class _StatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF242424), Color(0xFF1A1A1A)],
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(value,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        height: 1.1),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(label,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.38),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(icon, color: color.withValues(alpha: 0.65), size: 20),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Needs listing banner ──────────────────────────────────────────────────────
+class _NeedsListingBanner extends StatelessWidget {
+  final int count;
+  final int potentialCents;
+
+  const _NeedsListingBanner({required this.count, required this.potentialCents});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFE8400A).withValues(alpha: 0.10),
+        border: Border.all(color: const Color(0xFFE8400A).withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.label_outline, color: Color(0xFFE8400A), size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$count parts need listing',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
+                if (potentialCents > 0)
+                  Text('Potential ${_HomeStats.fmt(potentialCents)} revenue',
+                      style: const TextStyle(
+                          color: Color(0xFFE8400A), fontSize: 12, height: 1.4)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Recent vehicle row ────────────────────────────────────────────────────────
+class _RecentVehicleRow extends StatelessWidget {
+  final Vehicle vehicle;
+  final VoidCallback onTap;
+
+  const _RecentVehicleRow({required this.vehicle, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color statusColor;
+    final String statusLabel;
+    switch (vehicle.status) {
+      case VehicleStatus.stripping:
+        statusColor = const Color(0xFFE8700A);
+        statusLabel = 'Stripping';
+      case VehicleStatus.shellGone:
+        statusColor = Colors.white38;
+        statusLabel = 'Shell Gone';
+      case VehicleStatus.whole:
+        statusColor = Colors.blueAccent;
+        statusLabel = 'Whole';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF242424), Color(0xFF1A1A1A)],
+              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            ),
+            child: Row(
+              children: [
+                // Photo thumbnail
+                ClipRRect(
+                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                  child: _VehicleThumb(vehicleId: vehicle.id),
+                ),
+                const SizedBox(width: 12),
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        StatsTab._vehicleTitle(vehicle),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(statusLabel,
+                              style: TextStyle(
+                                  color: statusColor,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('${vehicle.partsCount} parts',
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.38),
+                                fontSize: 11)),
+                      ]),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: Colors.white.withValues(alpha: 0.2), size: 18),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Vehicle thumbnail (first photo or icon fallback) ──────────────────────────
+class _VehicleThumb extends StatefulWidget {
+  final String vehicleId;
+  const _VehicleThumb({required this.vehicleId});
+
+  @override
+  State<_VehicleThumb> createState() => _VehicleThumbState();
+}
+
+class _VehicleThumbState extends State<_VehicleThumb> {
+  AppPhoto? _photo;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final photos = await PhotoStorage.forOwner('vehicle', widget.vehicleId);
+    if (mounted) {
+      setState(() {
+        _photo = photos.isNotEmpty ? photos.first : null;
+        _loaded = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 72.0;
+    if (!_loaded) {
+      return Container(
+          width: size,
+          height: size,
+          color: const Color(0xFF1E1E1E));
+    }
+    if (_photo == null) {
+      return Container(
+        width: size,
+        height: size,
+        color: const Color(0xFF1E1E1E),
+        child: const Icon(Icons.directions_car_outlined,
+            color: Color(0xFFE8700A), size: 28),
+      );
+    }
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image(
+        image: imageProviderFor(_photo!),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          width: size,
+          height: size,
+          color: const Color(0xFF1E1E1E),
+          child: const Icon(Icons.directions_car_outlined,
+              color: Color(0xFFE8700A), size: 28),
         ),
       ),
     );

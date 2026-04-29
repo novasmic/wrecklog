@@ -1190,6 +1190,12 @@ class $PartsTableTable extends PartsTable
   late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
       'deleted_at', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _interchangeGroupIdMeta =
+      const VerificationMeta('interchangeGroupId');
+  @override
+  late final GeneratedColumn<String> interchangeGroupId =
+      GeneratedColumn<String>('interchange_group_id', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -1221,7 +1227,8 @@ class $PartsTableTable extends PartsTable
         vehicleUsageValue,
         vehicleUsageUnit,
         ownerId,
-        deletedAt
+        deletedAt,
+        interchangeGroupId
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1390,6 +1397,12 @@ class $PartsTableTable extends PartsTable
       context.handle(_deletedAtMeta,
           deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
     }
+    if (data.containsKey('interchange_group_id')) {
+      context.handle(
+          _interchangeGroupIdMeta,
+          interchangeGroupId.isAcceptableOrUnknown(
+              data['interchange_group_id']!, _interchangeGroupIdMeta));
+    }
     return context;
   }
 
@@ -1459,6 +1472,8 @@ class $PartsTableTable extends PartsTable
           .read(DriftSqlType.string, data['${effectivePrefix}owner_id']),
       deletedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}deleted_at']),
+      interchangeGroupId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}interchange_group_id']),
     );
   }
 
@@ -1499,6 +1514,7 @@ class PartRow extends DataClass implements Insertable<PartRow> {
   final String? vehicleUsageUnit;
   final String? ownerId;
   final int? deletedAt;
+  final String? interchangeGroupId;
   const PartRow(
       {required this.id,
       required this.vehicleId,
@@ -1529,7 +1545,8 @@ class PartRow extends DataClass implements Insertable<PartRow> {
       this.vehicleUsageValue,
       this.vehicleUsageUnit,
       this.ownerId,
-      this.deletedAt});
+      this.deletedAt,
+      this.interchangeGroupId});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1609,6 +1626,9 @@ class PartRow extends DataClass implements Insertable<PartRow> {
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<int>(deletedAt);
     }
+    if (!nullToAbsent || interchangeGroupId != null) {
+      map['interchange_group_id'] = Variable<String>(interchangeGroupId);
+    }
     return map;
   }
 
@@ -1687,6 +1707,9 @@ class PartRow extends DataClass implements Insertable<PartRow> {
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      interchangeGroupId: interchangeGroupId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(interchangeGroupId),
     );
   }
 
@@ -1726,6 +1749,8 @@ class PartRow extends DataClass implements Insertable<PartRow> {
       vehicleUsageUnit: serializer.fromJson<String?>(json['vehicleUsageUnit']),
       ownerId: serializer.fromJson<String?>(json['ownerId']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+      interchangeGroupId:
+          serializer.fromJson<String?>(json['interchangeGroupId']),
     );
   }
   @override
@@ -1762,6 +1787,7 @@ class PartRow extends DataClass implements Insertable<PartRow> {
       'vehicleUsageUnit': serializer.toJson<String?>(vehicleUsageUnit),
       'ownerId': serializer.toJson<String?>(ownerId),
       'deletedAt': serializer.toJson<int?>(deletedAt),
+      'interchangeGroupId': serializer.toJson<String?>(interchangeGroupId),
     };
   }
 
@@ -1795,7 +1821,8 @@ class PartRow extends DataClass implements Insertable<PartRow> {
           Value<int?> vehicleUsageValue = const Value.absent(),
           Value<String?> vehicleUsageUnit = const Value.absent(),
           Value<String?> ownerId = const Value.absent(),
-          Value<int?> deletedAt = const Value.absent()}) =>
+          Value<int?> deletedAt = const Value.absent(),
+          Value<String?> interchangeGroupId = const Value.absent()}) =>
       PartRow(
         id: id ?? this.id,
         vehicleId: vehicleId ?? this.vehicleId,
@@ -1841,6 +1868,9 @@ class PartRow extends DataClass implements Insertable<PartRow> {
             : this.vehicleUsageUnit,
         ownerId: ownerId.present ? ownerId.value : this.ownerId,
         deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+        interchangeGroupId: interchangeGroupId.present
+            ? interchangeGroupId.value
+            : this.interchangeGroupId,
       );
   PartRow copyWithCompanion(PartsTableCompanion data) {
     return PartRow(
@@ -1897,6 +1927,9 @@ class PartRow extends DataClass implements Insertable<PartRow> {
           : this.vehicleUsageUnit,
       ownerId: data.ownerId.present ? data.ownerId.value : this.ownerId,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      interchangeGroupId: data.interchangeGroupId.present
+          ? data.interchangeGroupId.value
+          : this.interchangeGroupId,
     );
   }
 
@@ -1932,7 +1965,8 @@ class PartRow extends DataClass implements Insertable<PartRow> {
           ..write('vehicleUsageValue: $vehicleUsageValue, ')
           ..write('vehicleUsageUnit: $vehicleUsageUnit, ')
           ..write('ownerId: $ownerId, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('interchangeGroupId: $interchangeGroupId')
           ..write(')'))
         .toString();
   }
@@ -1968,7 +2002,8 @@ class PartRow extends DataClass implements Insertable<PartRow> {
         vehicleUsageValue,
         vehicleUsageUnit,
         ownerId,
-        deletedAt
+        deletedAt,
+        interchangeGroupId
       ]);
   @override
   bool operator ==(Object other) =>
@@ -2003,7 +2038,8 @@ class PartRow extends DataClass implements Insertable<PartRow> {
           other.vehicleUsageValue == this.vehicleUsageValue &&
           other.vehicleUsageUnit == this.vehicleUsageUnit &&
           other.ownerId == this.ownerId &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.interchangeGroupId == this.interchangeGroupId);
 }
 
 class PartsTableCompanion extends UpdateCompanion<PartRow> {
@@ -2037,6 +2073,7 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
   final Value<String?> vehicleUsageUnit;
   final Value<String?> ownerId;
   final Value<int?> deletedAt;
+  final Value<String?> interchangeGroupId;
   final Value<int> rowid;
   const PartsTableCompanion({
     this.id = const Value.absent(),
@@ -2069,6 +2106,7 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
     this.vehicleUsageUnit = const Value.absent(),
     this.ownerId = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.interchangeGroupId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PartsTableCompanion.insert({
@@ -2102,6 +2140,7 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
     this.vehicleUsageUnit = const Value.absent(),
     this.ownerId = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.interchangeGroupId = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : id = Value(id),
         vehicleId = Value(vehicleId),
@@ -2139,6 +2178,7 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
     Expression<String>? vehicleUsageUnit,
     Expression<String>? ownerId,
     Expression<int>? deletedAt,
+    Expression<String>? interchangeGroupId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2173,6 +2213,8 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
       if (vehicleUsageUnit != null) 'vehicle_usage_unit': vehicleUsageUnit,
       if (ownerId != null) 'owner_id': ownerId,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (interchangeGroupId != null)
+        'interchange_group_id': interchangeGroupId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2208,6 +2250,7 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
       Value<String?>? vehicleUsageUnit,
       Value<String?>? ownerId,
       Value<int?>? deletedAt,
+      Value<String?>? interchangeGroupId,
       Value<int>? rowid}) {
     return PartsTableCompanion(
       id: id ?? this.id,
@@ -2240,6 +2283,7 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
       vehicleUsageUnit: vehicleUsageUnit ?? this.vehicleUsageUnit,
       ownerId: ownerId ?? this.ownerId,
       deletedAt: deletedAt ?? this.deletedAt,
+      interchangeGroupId: interchangeGroupId ?? this.interchangeGroupId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2337,6 +2381,9 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<int>(deletedAt.value);
     }
+    if (interchangeGroupId.present) {
+      map['interchange_group_id'] = Variable<String>(interchangeGroupId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2376,6 +2423,7 @@ class PartsTableCompanion extends UpdateCompanion<PartRow> {
           ..write('vehicleUsageUnit: $vehicleUsageUnit, ')
           ..write('ownerId: $ownerId, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('interchangeGroupId: $interchangeGroupId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2854,18 +2902,330 @@ class ListingsTableCompanion extends UpdateCompanion<ListingRow> {
   }
 }
 
+class $InterchangeGroupsTableTable extends InterchangeGroupsTable
+    with TableInfo<$InterchangeGroupsTableTable, InterchangeGroupRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $InterchangeGroupsTableTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _labelMeta = const VerificationMeta('label');
+  @override
+  late final GeneratedColumn<String> label = GeneratedColumn<String>(
+      'label', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _numbersMeta =
+      const VerificationMeta('numbers');
+  @override
+  late final GeneratedColumn<String> numbers = GeneratedColumn<String>(
+      'numbers', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('[]'));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, label, numbers, createdAt, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'interchange_groups';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<InterchangeGroupRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('label')) {
+      context.handle(
+          _labelMeta, label.isAcceptableOrUnknown(data['label']!, _labelMeta));
+    }
+    if (data.containsKey('numbers')) {
+      context.handle(_numbersMeta,
+          numbers.isAcceptableOrUnknown(data['numbers']!, _numbersMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  InterchangeGroupRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return InterchangeGroupRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      label: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}label'])!,
+      numbers: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}numbers'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at']),
+    );
+  }
+
+  @override
+  $InterchangeGroupsTableTable createAlias(String alias) {
+    return $InterchangeGroupsTableTable(attachedDatabase, alias);
+  }
+}
+
+class InterchangeGroupRow extends DataClass
+    implements Insertable<InterchangeGroupRow> {
+  final String id;
+  final String label;
+  final String numbers;
+  final int createdAt;
+  final int? updatedAt;
+  const InterchangeGroupRow(
+      {required this.id,
+      required this.label,
+      required this.numbers,
+      required this.createdAt,
+      this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['label'] = Variable<String>(label);
+    map['numbers'] = Variable<String>(numbers);
+    map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || updatedAt != null) {
+      map['updated_at'] = Variable<int>(updatedAt);
+    }
+    return map;
+  }
+
+  InterchangeGroupsTableCompanion toCompanion(bool nullToAbsent) {
+    return InterchangeGroupsTableCompanion(
+      id: Value(id),
+      label: Value(label),
+      numbers: Value(numbers),
+      createdAt: Value(createdAt),
+      updatedAt: updatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(updatedAt),
+    );
+  }
+
+  factory InterchangeGroupRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return InterchangeGroupRow(
+      id: serializer.fromJson<String>(json['id']),
+      label: serializer.fromJson<String>(json['label']),
+      numbers: serializer.fromJson<String>(json['numbers']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int?>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'label': serializer.toJson<String>(label),
+      'numbers': serializer.toJson<String>(numbers),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int?>(updatedAt),
+    };
+  }
+
+  InterchangeGroupRow copyWith(
+          {String? id,
+          String? label,
+          String? numbers,
+          int? createdAt,
+          Value<int?> updatedAt = const Value.absent()}) =>
+      InterchangeGroupRow(
+        id: id ?? this.id,
+        label: label ?? this.label,
+        numbers: numbers ?? this.numbers,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
+      );
+  InterchangeGroupRow copyWithCompanion(InterchangeGroupsTableCompanion data) {
+    return InterchangeGroupRow(
+      id: data.id.present ? data.id.value : this.id,
+      label: data.label.present ? data.label.value : this.label,
+      numbers: data.numbers.present ? data.numbers.value : this.numbers,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('InterchangeGroupRow(')
+          ..write('id: $id, ')
+          ..write('label: $label, ')
+          ..write('numbers: $numbers, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, label, numbers, createdAt, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is InterchangeGroupRow &&
+          other.id == this.id &&
+          other.label == this.label &&
+          other.numbers == this.numbers &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class InterchangeGroupsTableCompanion
+    extends UpdateCompanion<InterchangeGroupRow> {
+  final Value<String> id;
+  final Value<String> label;
+  final Value<String> numbers;
+  final Value<int> createdAt;
+  final Value<int?> updatedAt;
+  final Value<int> rowid;
+  const InterchangeGroupsTableCompanion({
+    this.id = const Value.absent(),
+    this.label = const Value.absent(),
+    this.numbers = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  InterchangeGroupsTableCompanion.insert({
+    required String id,
+    this.label = const Value.absent(),
+    this.numbers = const Value.absent(),
+    required int createdAt,
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        createdAt = Value(createdAt);
+  static Insertable<InterchangeGroupRow> custom({
+    Expression<String>? id,
+    Expression<String>? label,
+    Expression<String>? numbers,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (label != null) 'label': label,
+      if (numbers != null) 'numbers': numbers,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  InterchangeGroupsTableCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? label,
+      Value<String>? numbers,
+      Value<int>? createdAt,
+      Value<int?>? updatedAt,
+      Value<int>? rowid}) {
+    return InterchangeGroupsTableCompanion(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      numbers: numbers ?? this.numbers,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (label.present) {
+      map['label'] = Variable<String>(label.value);
+    }
+    if (numbers.present) {
+      map['numbers'] = Variable<String>(numbers.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('InterchangeGroupsTableCompanion(')
+          ..write('id: $id, ')
+          ..write('label: $label, ')
+          ..write('numbers: $numbers, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $VehiclesTableTable vehiclesTable = $VehiclesTableTable(this);
   late final $PartsTableTable partsTable = $PartsTableTable(this);
   late final $ListingsTableTable listingsTable = $ListingsTableTable(this);
+  late final $InterchangeGroupsTableTable interchangeGroupsTable =
+      $InterchangeGroupsTableTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities =>
-      [vehiclesTable, partsTable, listingsTable];
+      [vehiclesTable, partsTable, listingsTable, interchangeGroupsTable];
 }
 
 typedef $$VehiclesTableTableCreateCompanionBuilder = VehiclesTableCompanion
@@ -3330,6 +3690,7 @@ typedef $$PartsTableTableCreateCompanionBuilder = PartsTableCompanion Function({
   Value<String?> vehicleUsageUnit,
   Value<String?> ownerId,
   Value<int?> deletedAt,
+  Value<String?> interchangeGroupId,
   Value<int> rowid,
 });
 typedef $$PartsTableTableUpdateCompanionBuilder = PartsTableCompanion Function({
@@ -3363,6 +3724,7 @@ typedef $$PartsTableTableUpdateCompanionBuilder = PartsTableCompanion Function({
   Value<String?> vehicleUsageUnit,
   Value<String?> ownerId,
   Value<int?> deletedAt,
+  Value<String?> interchangeGroupId,
   Value<int> rowid,
 });
 
@@ -3470,6 +3832,10 @@ class $$PartsTableTableFilterComposer
 
   ColumnFilters<int> get deletedAt => $composableBuilder(
       column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get interchangeGroupId => $composableBuilder(
+      column: $table.interchangeGroupId,
+      builder: (column) => ColumnFilters(column));
 }
 
 class $$PartsTableTableOrderingComposer
@@ -3579,6 +3945,10 @@ class $$PartsTableTableOrderingComposer
 
   ColumnOrderings<int> get deletedAt => $composableBuilder(
       column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get interchangeGroupId => $composableBuilder(
+      column: $table.interchangeGroupId,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$PartsTableTableAnnotationComposer
@@ -3679,6 +4049,9 @@ class $$PartsTableTableAnnotationComposer
 
   GeneratedColumn<int> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get interchangeGroupId => $composableBuilder(
+      column: $table.interchangeGroupId, builder: (column) => column);
 }
 
 class $$PartsTableTableTableManager extends RootTableManager<
@@ -3734,6 +4107,7 @@ class $$PartsTableTableTableManager extends RootTableManager<
             Value<String?> vehicleUsageUnit = const Value.absent(),
             Value<String?> ownerId = const Value.absent(),
             Value<int?> deletedAt = const Value.absent(),
+            Value<String?> interchangeGroupId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               PartsTableCompanion(
@@ -3767,6 +4141,7 @@ class $$PartsTableTableTableManager extends RootTableManager<
             vehicleUsageUnit: vehicleUsageUnit,
             ownerId: ownerId,
             deletedAt: deletedAt,
+            interchangeGroupId: interchangeGroupId,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -3800,6 +4175,7 @@ class $$PartsTableTableTableManager extends RootTableManager<
             Value<String?> vehicleUsageUnit = const Value.absent(),
             Value<String?> ownerId = const Value.absent(),
             Value<int?> deletedAt = const Value.absent(),
+            Value<String?> interchangeGroupId = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               PartsTableCompanion.insert(
@@ -3833,6 +4209,7 @@ class $$PartsTableTableTableManager extends RootTableManager<
             vehicleUsageUnit: vehicleUsageUnit,
             ownerId: ownerId,
             deletedAt: deletedAt,
+            interchangeGroupId: interchangeGroupId,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -4089,6 +4466,186 @@ typedef $$ListingsTableTableProcessedTableManager = ProcessedTableManager<
     ),
     ListingRow,
     PrefetchHooks Function()>;
+typedef $$InterchangeGroupsTableTableCreateCompanionBuilder
+    = InterchangeGroupsTableCompanion Function({
+  required String id,
+  Value<String> label,
+  Value<String> numbers,
+  required int createdAt,
+  Value<int?> updatedAt,
+  Value<int> rowid,
+});
+typedef $$InterchangeGroupsTableTableUpdateCompanionBuilder
+    = InterchangeGroupsTableCompanion Function({
+  Value<String> id,
+  Value<String> label,
+  Value<String> numbers,
+  Value<int> createdAt,
+  Value<int?> updatedAt,
+  Value<int> rowid,
+});
+
+class $$InterchangeGroupsTableTableFilterComposer
+    extends Composer<_$AppDatabase, $InterchangeGroupsTableTable> {
+  $$InterchangeGroupsTableTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get label => $composableBuilder(
+      column: $table.label, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get numbers => $composableBuilder(
+      column: $table.numbers, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$InterchangeGroupsTableTableOrderingComposer
+    extends Composer<_$AppDatabase, $InterchangeGroupsTableTable> {
+  $$InterchangeGroupsTableTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get label => $composableBuilder(
+      column: $table.label, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get numbers => $composableBuilder(
+      column: $table.numbers, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$InterchangeGroupsTableTableAnnotationComposer
+    extends Composer<_$AppDatabase, $InterchangeGroupsTableTable> {
+  $$InterchangeGroupsTableTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get label =>
+      $composableBuilder(column: $table.label, builder: (column) => column);
+
+  GeneratedColumn<String> get numbers =>
+      $composableBuilder(column: $table.numbers, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$InterchangeGroupsTableTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $InterchangeGroupsTableTable,
+    InterchangeGroupRow,
+    $$InterchangeGroupsTableTableFilterComposer,
+    $$InterchangeGroupsTableTableOrderingComposer,
+    $$InterchangeGroupsTableTableAnnotationComposer,
+    $$InterchangeGroupsTableTableCreateCompanionBuilder,
+    $$InterchangeGroupsTableTableUpdateCompanionBuilder,
+    (
+      InterchangeGroupRow,
+      BaseReferences<_$AppDatabase, $InterchangeGroupsTableTable,
+          InterchangeGroupRow>
+    ),
+    InterchangeGroupRow,
+    PrefetchHooks Function()> {
+  $$InterchangeGroupsTableTableTableManager(
+      _$AppDatabase db, $InterchangeGroupsTableTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$InterchangeGroupsTableTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$InterchangeGroupsTableTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$InterchangeGroupsTableTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> label = const Value.absent(),
+            Value<String> numbers = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+            Value<int?> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              InterchangeGroupsTableCompanion(
+            id: id,
+            label: label,
+            numbers: numbers,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            Value<String> label = const Value.absent(),
+            Value<String> numbers = const Value.absent(),
+            required int createdAt,
+            Value<int?> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              InterchangeGroupsTableCompanion.insert(
+            id: id,
+            label: label,
+            numbers: numbers,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$InterchangeGroupsTableTableProcessedTableManager
+    = ProcessedTableManager<
+        _$AppDatabase,
+        $InterchangeGroupsTableTable,
+        InterchangeGroupRow,
+        $$InterchangeGroupsTableTableFilterComposer,
+        $$InterchangeGroupsTableTableOrderingComposer,
+        $$InterchangeGroupsTableTableAnnotationComposer,
+        $$InterchangeGroupsTableTableCreateCompanionBuilder,
+        $$InterchangeGroupsTableTableUpdateCompanionBuilder,
+        (
+          InterchangeGroupRow,
+          BaseReferences<_$AppDatabase, $InterchangeGroupsTableTable,
+              InterchangeGroupRow>
+        ),
+        InterchangeGroupRow,
+        PrefetchHooks Function()>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4099,4 +4656,7 @@ class $AppDatabaseManager {
       $$PartsTableTableTableManager(_db, _db.partsTable);
   $$ListingsTableTableTableManager get listingsTable =>
       $$ListingsTableTableTableManager(_db, _db.listingsTable);
+  $$InterchangeGroupsTableTableTableManager get interchangeGroupsTable =>
+      $$InterchangeGroupsTableTableTableManager(
+          _db, _db.interchangeGroupsTable);
 }

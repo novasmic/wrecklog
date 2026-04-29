@@ -19,6 +19,40 @@ class FirestoreService {
   static CollectionReference<Map<String, dynamic>> _partsCol(String uid, String vehicleId) =>
       _vehiclesCol(uid).doc(vehicleId).collection('parts');
 
+  static CollectionReference<Map<String, dynamic>> _interchangeCol(String uid) =>
+      _db.collection('users').doc(uid).collection('interchangeGroups');
+
+  // ── Interchange groups ─────────────────────────────────────────────────────
+
+  static Future<void> upsertInterchangeGroup(String uid, Map<String, dynamic> groupJson) async {
+    try {
+      final id = groupJson['id'] as String;
+      final data = Map<String, dynamic>.from(groupJson)
+        ..['syncedAt'] = FieldValue.serverTimestamp();
+      await _interchangeCol(uid).doc(id).set(data, SetOptions(merge: true));
+    } catch (e, st) {
+      logError('Firestore upsertInterchangeGroup', e, st);
+    }
+  }
+
+  static Future<void> deleteInterchangeGroup(String uid, String groupId) async {
+    try {
+      await _interchangeCol(uid).doc(groupId).delete();
+    } catch (e, st) {
+      logError('Firestore deleteInterchangeGroup', e, st);
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> loadInterchangeGroups(String uid) async {
+    try {
+      final snap = await _interchangeCol(uid).get();
+      return snap.docs.map((d) => {...d.data(), 'id': d.id}).toList();
+    } catch (e, st) {
+      logError('Firestore loadInterchangeGroups', e, st);
+      return [];
+    }
+  }
+
   // ── Vehicles ───────────────────────────────────────────────────────────────
 
   static Future<void> upsertVehicle(String uid, Map<String, dynamic> vehicleJson) async {
