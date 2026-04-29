@@ -374,13 +374,18 @@ class PhotoStorage {
         if (tmp.existsSync()) await tmp.delete();
         return;
       }
-      // Fallback: copy bytes then clean up tmp (only if tmp still exists).
-      // Re-create the directory first — the race with concurrent _saveAll
-      // calls can leave the directory absent by the time we reach this path.
       if (kDebugMode) debugPrint('PhotoStorage: atomic rename failed, using copy fallback: $e');
+      // Re-create the directory — concurrent operations can leave it absent.
+      await file.parent.create(recursive: true);
       try {
-        await file.parent.create(recursive: true);
-        if (tmp.existsSync()) await tmp.copy(file.path);
+        if (tmp.existsSync()) {
+          // Happy path: tmp still exists, copy it across.
+          await tmp.copy(file.path);
+        } else {
+          // tmp was consumed by the failed rename — write the JSON directly.
+          // This is safe because we still hold jsonString in memory.
+          await file.writeAsString(jsonString);
+        }
       } finally {
         if (tmp.existsSync()) await tmp.delete();
       }

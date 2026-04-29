@@ -24,8 +24,8 @@ export 'photo_storage.dart'; // re-export so callers get AppPhoto
 
 // ── Constants ────────────────────────────────────────────────────────────────
 // kMaxPhotosPerOwner is defined in photo_constants.dart
-const int kMaxVehiclePhotos = kMaxPhotosPerOwner;
-const int kMaxPartPhotos    = kMaxPhotosPerOwner;
+const int kMaxVehiclePhotos = 10;
+const int kMaxPartPhotos    = kMaxPhotosPerOwner; // 5
 
 // ── Image provider helper ─────────────────────────────────────────────────────
 // Storage strategies:
