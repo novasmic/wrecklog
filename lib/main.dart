@@ -12654,7 +12654,7 @@ class _RecentVehicleRow extends StatelessWidget {
     final String statusLabel;
     switch (vehicle.status) {
       case VehicleStatus.stripping:
-        statusColor = const Color(0xFFE8700A);
+        statusColor = const Color(0xFF4CAF50);
         statusLabel = 'Stripping';
       case VehicleStatus.shellGone:
         statusColor = Colors.white38;
