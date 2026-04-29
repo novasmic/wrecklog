@@ -899,7 +899,7 @@ extension VehicleStatusX on VehicleStatus {
       case VehicleStatus.whole:
         return 'Whole';
       case VehicleStatus.stripping:
-        return 'Being Stripped';
+        return 'Stripping';
       case VehicleStatus.shellGone:
         return 'Shell Gone';
     }
