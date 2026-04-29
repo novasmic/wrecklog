@@ -1266,7 +1266,7 @@ class Vehicle {
       itemType: ItemTypeX.fromString((j['itemType'] as String?) ?? 'other'),
       identifier: (j['identifier'] as String?) ?? (j['vin'] as String?),
       status: VehicleStatusX.fromString((j['status'] as String?) ?? 'whole'),
-      purchasePriceCents: (j['purchasePriceCents'] as num?)?.toInt(),
+      purchasePriceCents: ((j['purchasePriceCents'] ?? j['costPriceCents']) as num?)?.toInt(),
       acquiredAt: DateTime.tryParse((j['acquiredAt'] as String?) ?? '') ?? DateTime.now(),
       parts: partsJson.map((e) => Part.fromJson(e as Map<String, dynamic>)).toList(),
       usageValue: (j['usageValue'] as num?)?.toInt(),
