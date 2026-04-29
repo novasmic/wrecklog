@@ -4807,46 +4807,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     });
   }
 
-  /// Summary banner: prominent "X parts need listing" + secondary stats.
-  /// Accepts pre-computed counts to avoid redundant iteration in build().
-  Widget _buildStatusSummaryStrip(int needsCount, int listedCount, int soldCount) {
-
-    Widget statChip(String label, int count, Color color) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 5, height: 5, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 5),
-          Text('$count $label', style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
-        ]),
-      );
-    }
-
-    if (needsCount == 0 && listedCount == 0 && soldCount == 0) return const SizedBox.shrink();
-
-    return Row(children: [
-      if (needsCount > 0) ...[
-        statChip('Needs Listing', needsCount, const Color(0xFFE8400A)),
-        const SizedBox(width: 8),
-      ],
-      if (listedCount > 0) ...[
-        statChip('Listed', listedCount, Colors.green),
-        const SizedBox(width: 8),
-      ],
-      if (soldCount > 0)
-        statChip('Sold', soldCount, Colors.white54),
-    ]);
-  }
-
   /// Builds a single status section (header + part cards).
   Widget _buildStatusSection(
       String title, List<Part> parts, Color accentColor, BuildContext context,
-      {String? subtitle}) {
+      {String? subtitle, bool hideCount = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: ClipRRect(
@@ -4885,12 +4849,14 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
                       fontSize: 14,
                       color: accentColor,
                     )),
-                const SizedBox(width: 8),
-                Text('${parts.length}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: accentColor.withValues(alpha: 0.55),
-                    )),
+                if (!hideCount) ...[
+                  const SizedBox(width: 8),
+                  Text('${parts.length}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: accentColor.withValues(alpha: 0.55),
+                      )),
+                ],
               ],
             ),
             children: parts.map((p) => Padding(
@@ -4952,11 +4918,15 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
   List<Widget> _buildGroupedParts(
       List<Part> needsListing, List<Part> listed, List<Part> sold,
       BuildContext context) {
+    final potential = needsListing.fold<int>(0, (s, p) => s + (p.askingPriceCents ?? 0));
+    final n = needsListing.length;
+    final needsTitle = potential > 0
+        ? '$n ${n == 1 ? 'part' : 'parts'} need listing  —  potential ${_HomeStats.fmt(potential)} revenue'
+        : '$n ${n == 1 ? 'part' : 'parts'} need listing';
 
     return [
       if (needsListing.isNotEmpty)
-        _buildStatusSection('Needs Listing', needsListing, const Color(0xFFE8400A), context,
-            subtitle: 'Add a live marketplace link to list these parts'),
+        _buildStatusSection(needsTitle, needsListing, const Color(0xFFE8400A), context, hideCount: true),
       if (listed.isNotEmpty)
         _buildStatusSection('Listed', listed, Colors.green, context),
       if (sold.isNotEmpty)
@@ -5004,17 +4974,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     final plColor = profitColor(pl);
     final shownParts = _filteredParts();
 
-    // Single pass over all parts → summary strip counts.
-    // Single pass over filtered parts → section groups.
-    // Previously this was 7 separate .where() passes; now it's 2.
-    var needsAllCount = 0, listedAllCount = 0, soldAllCount = 0;
-    for (final p in _v.parts) {
-      switch (_partWorkflowStatus(p)) {
-        case _WorkflowStatus.needsListing: needsAllCount++; break;
-        case _WorkflowStatus.listed:       listedAllCount++; break;
-        case _WorkflowStatus.sold:         soldAllCount++; break;
-      }
-    }
     final needsGroup = <Part>[], listedGroup = <Part>[], soldGroup = <Part>[];
     for (final p in shownParts) {
       switch (_partWorkflowStatus(p)) {
@@ -5266,11 +5225,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
             ],
           ),
           const SizedBox(height: 14),
-
-          // ── Workflow summary banner ───────────────────────────────────
-          if (_v.parts.isNotEmpty)
-            _buildStatusSummaryStrip(needsAllCount, listedAllCount, soldAllCount),
-          if (_v.parts.isNotEmpty) const SizedBox(height: 12),
 
           // ── Revenue snapshot ──────────────────────────────────────────
           _VehicleRevenuePanel(vehicle: _v),
