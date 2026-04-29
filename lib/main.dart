@@ -4983,12 +4983,6 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       }
     }
 
-    final infoParts = <String>[];
-    if ((_v.identifier ?? '').trim().isNotEmpty) infoParts.add(_v.identifier!.trim());
-    if (_v.color.trim().isNotEmpty) infoParts.add(_v.color.trim());
-    if (_v.usageValue != null) infoParts.add('${_formatUsage(_v.usageValue!)} ${_v.usageUnit}');
-    final infoLine = infoParts.join('  ·  ');
-
     Widget statBox(String value, String label, Color color, {bool active = false, VoidCallback? onTap}) {
       return Expanded(
         child: GestureDetector(
@@ -5156,33 +5150,61 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
             }),
           ],
 
-              // ── Vehicle info line ────────────────────────────────────────
-          if (infoLine.isNotEmpty) ...[
-            Text(
-              infoLine,
-              style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 10),
-          ],
-          if ((_v.notes ?? '').trim().isNotEmpty) ...[
-            Row(
+              // ── Status chip + vehicle info card ─────────────────────────
+          Builder(builder: (_) {
+            final statusColor = switch (_v.status) {
+              VehicleStatus.whole     => const Color(0xFFE53935),
+              VehicleStatus.stripping => const Color(0xFF4CAF50),
+              VehicleStatus.shellGone => const Color(0xFFE8700A),
+            };
+            final statusLabel = _v.status.label;
+            final infoItems = <(String, String)>[];
+            if ((_v.color).trim().isNotEmpty) infoItems.add(('Colour', _v.color.trim()));
+            if ((_v.identifier ?? '').trim().isNotEmpty) infoItems.add(('VIN / Rego', _v.identifier!.trim()));
+            if (_v.usageValue != null) infoItems.add(('Odometer', '${_formatUsage(_v.usageValue!)} ${_v.usageUnit}'));
+            if ((_v.notes ?? '').trim().isNotEmpty) infoItems.add(('Notes', _v.notes!.trim()));
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.warning_amber_outlined, size: 14, color: Colors.orange.withValues(alpha: 0.8)),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _v.notes!,
-                    style: TextStyle(fontSize: 12, color: Colors.orange.withValues(alpha: 0.75)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.3)),
                   ),
+                  child: Text(statusLabel,
+                      style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600)),
                 ),
+                if (infoItems.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Wrap(
+                      spacing: 24,
+                      runSpacing: 10,
+                      children: infoItems.map(((String, String) item) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(item.$1, style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.35), fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                          const SizedBox(height: 2),
+                          Text(item.$2, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500)),
+                        ],
+                      )).toList(),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
               ],
-            ),
-            const SizedBox(height: 10),
-          ],
+            );
+          }),
 
           // ── Total earned banner (shows once any part is sold) ────────
           if (_v.soldRevenueCents > 0) ...[
@@ -12710,8 +12732,9 @@ class _RecentVehicleRow extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.15),
+                            color: statusColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: statusColor.withValues(alpha: 0.3)),
                           ),
                           child: Text(statusLabel,
                               style: TextStyle(
