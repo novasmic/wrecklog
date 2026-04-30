@@ -10086,7 +10086,7 @@ class WebAppTab extends StatelessWidget {
     (Icons.edit_note_outlined,     'Bulk edit parts across all vehicles'),
     (Icons.storefront_outlined,    'Public shop page for buyers to browse'),
     (Icons.bar_chart_outlined,     'Detailed sales and revenue stats'),
-    (Icons.devices_outlined,       'Works on desktop, tablet and mobile'),
+    (Icons.monitor_outlined,        'Designed for desktop — full-screen experience'),
   ];
 
   @override
