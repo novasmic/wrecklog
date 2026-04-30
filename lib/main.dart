@@ -3342,9 +3342,13 @@ class VehicleCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        GestureDetector(
+                        InkWell(
                           onTap: onStatusChange != null ? () => _pickStatus(context) : null,
-                          child: _StatusBadge(vehicle.status),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                            child: _StatusBadge(vehicle.status),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
