@@ -10089,18 +10089,12 @@ class WebAppTab extends StatelessWidget {
     (Icons.devices_outlined,       'Works on desktop, tablet and mobile'),
   ];
 
-  Future<void> _open() async {
-    final uri = Uri.parse(_webUrl);
-    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([auth, billing]),
+      animation: auth,
       builder: (context, _) {
         final user = auth.currentUser;
-        final isPro = billing.isPro;
 
         return Scaffold(
           appBar: AppBar(title: const Text('Web App')),
@@ -10131,14 +10125,20 @@ class WebAppTab extends StatelessWidget {
 
                 // Headline
                 const Text(
-                  'Manage your yard on any device',
+                  'Your full yard on the big screen',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 6),
-                Text(
+                const Text(
+                  'Open on your desktop or laptop',
+                  style: TextStyle(fontSize: 13, color: Colors.white54),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 4),
+                const Text(
                   _webUrl,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFFE8700A)),
+                  style: TextStyle(fontSize: 13, color: Color(0xFFE8700A), fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
@@ -10167,17 +10167,24 @@ class WebAppTab extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             const Text(
-                              'Create a free account to sync your data across all your devices and access the web app.',
+                              'Create a free account so your data syncs automatically — then sign in at app.wrecklog.com.au on any desktop browser.',
                               style: TextStyle(color: Colors.white70, fontSize: 13),
                               textAlign: TextAlign.center,
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 16),
                             FilledButton.icon(
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => const AuthScreen()),
                               ),
                               icon: const Icon(Icons.person_add_outlined),
-                              label: const Text('Create Account / Sign In'),
+                              label: const Text('Create Free Account'),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const AuthScreen()),
+                              ),
+                              child: const Text('Already have an account? Sign in'),
                             ),
                           ],
                         )
@@ -10186,7 +10193,7 @@ class WebAppTab extends StatelessWidget {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 16),
+                                const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 18),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -10197,30 +10204,11 @@ class WebAppTab extends StatelessWidget {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 14),
-                            if (!isPro) ...[
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE8700A).withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFFE8700A).withValues(alpha: 0.3)),
-                                ),
-                                child: const Text(
-                                  'Web app access is included with WreckLog Pro. Upgrade to unlock it.',
-                                  style: TextStyle(color: Color(0xFFE8700A), fontSize: 12),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                            ],
-                            FilledButton.icon(
-                              onPressed: _open,
-                              icon: const Icon(Icons.open_in_new),
-                              label: const Text('Open Web App'),
-                              style: isPro ? null : FilledButton.styleFrom(
-                                backgroundColor: Colors.white24,
-                              ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'You\'re all set! Open app.wrecklog.com.au on your desktop or laptop and sign in with the same account.',
+                              style: TextStyle(color: Colors.white54, fontSize: 13),
+                              textAlign: TextAlign.center,
                             ),
                           ],
                         ),
