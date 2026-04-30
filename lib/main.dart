@@ -855,7 +855,7 @@ class _AppShellState extends State<AppShell> {
             NavigationDestination(icon: Icon(Icons.directions_car), label: 'Vehicles'),
             NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
             NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Stats'),
-            NavigationDestination(icon: Icon(Icons.monitor_outlined), label: 'Web App'),
+            NavigationDestination(icon: Icon(Icons.monitor_outlined), label: 'Web'),
             NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
           ],
         ),
