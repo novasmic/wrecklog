@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../app_services.dart';
 import 'analytics_service.dart';
 
 class RatingService {
@@ -17,7 +17,7 @@ class RatingService {
     await prefs.setBool(_kHasRated, true);
 
     try {
-      final uid = auth.uid;
+      final uid = FirebaseAuth.instance.currentUser?.uid;
       final docId = uid ?? 'anon_${DateTime.now().millisecondsSinceEpoch}';
       await FirebaseFirestore.instance.collection('ratings').doc(docId).set({
         'stars': stars,

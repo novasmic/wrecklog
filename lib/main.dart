@@ -3312,44 +3312,42 @@ class VehicleCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      _titleOrFallback(vehicle),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
                     Row(
                       children: [
+                        _StatusBadge(vehicle.status),
+                        const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            _titleOrFallback(vehicle),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
+                          child: Text.rich(
+                            TextSpan(
+                              style: const TextStyle(fontSize: 12),
+                              children: [
+                                TextSpan(
+                                  text: statPrefix,
+                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
+                                ),
+                                if (showPL)
+                                  TextSpan(
+                                    text: 'P/L $plStr',
+                                    style: TextStyle(color: plColor, fontWeight: FontWeight.w600),
+                                  ),
+                              ],
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        ...[
-                          const SizedBox(width: 6),
-                          _StatusBadge(vehicle.status),
-                        ],
                       ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text.rich(
-                      TextSpan(
-                        style: const TextStyle(fontSize: 12),
-                        children: [
-                          TextSpan(
-                            text: statPrefix,
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
-                          ),
-                          if (showPL)
-                            TextSpan(
-                              text: 'P/L $plStr',
-                              style: TextStyle(color: plColor, fontWeight: FontWeight.w600),
-                            ),
-                        ],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                     if ((vehicle.notes ?? '').trim().isNotEmpty) ...[
                       const SizedBox(height: 4),
@@ -10148,7 +10146,7 @@ class _SettingsTabState extends State<SettingsTab> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Text('Account', style: TextStyle(fontWeight: FontWeight.w700)),
-                                    Text(user.email ?? '', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                                    Text(user.email ?? '', style: const TextStyle(color: Colors.white38, fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
                                   ],
                                 ),
                               ),
@@ -12426,6 +12424,13 @@ class _HomeStats {
   }
 
   static String fmt(int cents) => StatsTab._fmtMoney(cents);
+
+  static String fmtCompact(int cents) {
+    final sign = cents < 0 ? '-' : '';
+    final dollars = cents.abs() ~/ 100;
+    if (dollars >= 10000) return '$sign\$${(dollars / 1000).toStringAsFixed(dollars >= 100000 ? 0 : 1)}k';
+    return '$sign\$${StatsTab._withCommas(dollars)}';
+  }
 }
 
 class HomeTab extends StatefulWidget {
@@ -12525,9 +12530,9 @@ class _HomeTabState extends State<HomeTab> {
                           icon: Icons.check_circle_outline, color: Colors.tealAccent),
                       _StatCard(label: 'Scrapped', value: '${s.scrapped}',
                           icon: Icons.delete_outline, color: Colors.redAccent),
-                      _StatCard(label: 'Revenue', value: _HomeStats.fmt(s.revenueCents),
+                      _StatCard(label: 'Revenue', value: _HomeStats.fmtCompact(s.revenueCents),
                           icon: Icons.attach_money, color: Colors.greenAccent),
-                      _StatCard(label: 'Cost', value: _HomeStats.fmt(s.costCents),
+                      _StatCard(label: 'Cost', value: _HomeStats.fmtCompact(s.costCents),
                           icon: Icons.shopping_cart_outlined, color: Colors.orangeAccent),
                     ],
                   ),
@@ -12645,7 +12650,7 @@ class _NeedsListingBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('$count parts need listing',
+                Text('$count ${count == 1 ? 'part needs' : 'parts need'} listing',
                     style: const TextStyle(
                         color: Color(0xFFE8400A),
                         fontWeight: FontWeight.w700,
