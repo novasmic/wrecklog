@@ -829,6 +829,7 @@ class _AppShellState extends State<AppShell> {
             loading: _loading,
             vehicles: _vehicles,
           ),
+          const WebAppTab(),
           SettingsTab(
             vehicles: _vehicles,
             onRestoreVehicles: (restored) async {
@@ -854,6 +855,7 @@ class _AppShellState extends State<AppShell> {
             NavigationDestination(icon: Icon(Icons.directions_car), label: 'Vehicles'),
             NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
             NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Stats'),
+            NavigationDestination(icon: Icon(Icons.monitor_outlined), label: 'Web App'),
             NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
           ],
         ),
@@ -2872,23 +2874,8 @@ class _VehiclesHomeState extends State<VehiclesHome> {
                             if (!ok) return;
                             await onDeleteVehicle(v.id);
                           },
-                          onMarkCompleted: () async {
-                            final isCompleted = v.status == VehicleStatus.shellGone;
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Text(isCompleted ? 'Mark Active?' : 'Mark Completed?'),
-                                content: Text(isCompleted
-                                    ? 'Move "${_titleOrFallback(v)}" back to active stripping?'
-                                    : 'Mark "${_titleOrFallback(v)}" as completed (shell gone)?'),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                                  FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(isCompleted ? 'Mark Active' : 'Mark Completed')),
-                                ],
-                              ),
-                            ) ?? false;
-                            if (!ok) return;
-                            v.status = isCompleted ? VehicleStatus.stripping : VehicleStatus.shellGone;
+                          onStatusChange: (newStatus) async {
+                            v.status = newStatus;
                             await onUpdateVehicle(v);
                           },
                         ),
@@ -3208,15 +3195,45 @@ class VehicleCard extends StatelessWidget {
   final Vehicle vehicle;
   final VoidCallback onOpen;
   final VoidCallback onDelete;
-  final VoidCallback? onMarkCompleted;
+  final void Function(VehicleStatus)? onStatusChange;
 
   const VehicleCard({
     super.key,
     required this.vehicle,
     required this.onOpen,
     required this.onDelete,
-    this.onMarkCompleted,
+    this.onStatusChange,
   });
+
+  void _pickStatus(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Change Status'),
+        children: VehicleStatus.values.map((s) {
+          final isSelected = s == vehicle.status;
+          final color = switch (s) {
+            VehicleStatus.whole     => const Color(0xFFE53935),
+            VehicleStatus.stripping => const Color(0xFF4CAF50),
+            VehicleStatus.shellGone => const Color(0xFFE8700A),
+          };
+          return SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (!isSelected) onStatusChange?.call(s);
+            },
+            child: Row(
+              children: [
+                Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked, color: color, size: 18),
+                const SizedBox(width: 12),
+                Text(s.label, style: TextStyle(color: isSelected ? color : Colors.white70, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3297,18 +3314,16 @@ class VehicleCard extends StatelessWidget {
                         ),
                 ),
               ),
-              const SizedBox(width: 16),
-              // Type icon in circle
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFE8700A).withValues(alpha: 0.12),
+              const SizedBox(width: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: _VehicleThumb(
+                  vehicleId: vehicle.id,
+                  size: 52,
+                  fallbackIcon: typeIcon,
                 ),
-                child: Icon(typeIcon, size: 24, color: const Color(0xFFE8700A)),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               // Title + stats
               Expanded(
                 child: Column(
@@ -3327,7 +3342,10 @@ class VehicleCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        _StatusBadge(vehicle.status),
+                        GestureDetector(
+                          onTap: onStatusChange != null ? () => _pickStatus(context) : null,
+                          child: _StatusBadge(vehicle.status),
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text.rich(
@@ -3375,15 +3393,15 @@ class VehicleCard extends StatelessWidget {
               PopupMenuButton<String>(
                 onSelected: (v) {
                   if (v == 'delete') onDelete();
-                  if (v == 'complete' && onMarkCompleted != null) onMarkCompleted!();
+                  if (v == 'status') _pickStatus(context);
                 },
                 itemBuilder: (_) => [
-                  if (onMarkCompleted != null)
-                    PopupMenuItem(
-                      value: 'complete',
+                  if (onStatusChange != null)
+                    const PopupMenuItem(
+                      value: 'status',
                       child: ListTile(
-                        leading: Icon(isCompleted ? Icons.refresh : Icons.check_circle_outline, color: isCompleted ? Colors.orange : Colors.grey),
-                        title: Text(isCompleted ? 'Mark Active' : 'Mark Completed'),
+                        leading: Icon(Icons.swap_horiz, color: Colors.white54),
+                        title: Text('Change Status'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -10052,6 +10070,168 @@ class _StatPartRow {
   });
 }
 /// ----------------------------
+/// Web App Promo Tab
+/// ----------------------------
+class WebAppTab extends StatelessWidget {
+  const WebAppTab({super.key});
+
+  static const _webUrl = 'https://app.wrecklog.com.au';
+
+  static const _features = [
+    (Icons.dashboard_outlined,     'Full dashboard overview of your yard'),
+    (Icons.edit_note_outlined,     'Bulk edit parts across all vehicles'),
+    (Icons.storefront_outlined,    'Public shop page for buyers to browse'),
+    (Icons.bar_chart_outlined,     'Detailed sales and revenue stats'),
+    (Icons.devices_outlined,       'Works on desktop, tablet and mobile'),
+  ];
+
+  Future<void> _open() async {
+    final uri = Uri.parse(_webUrl);
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([auth, billing]),
+      builder: (context, _) {
+        final user = auth.currentUser;
+        final isPro = billing.isPro;
+
+        return Scaffold(
+          appBar: AppBar(title: const Text('Web App')),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(kPad),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Screenshot preview
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    'assets/web_preview.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 180,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.monitor, color: Color(0xFFE8700A), size: 48),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Headline
+                const Text(
+                  'Manage your yard on any device',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _webUrl,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFFE8700A)),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+
+                // Feature list
+                AppCard(
+                  child: Column(
+                    children: _features.map((f) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Icon(f.$1, color: const Color(0xFFE8700A), size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(f.$2, style: const TextStyle(color: Colors.white70, fontSize: 13))),
+                        ],
+                      ),
+                    )).toList(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Auth / CTA section
+                AppCard(
+                  child: user == null
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'Create a free account to sync your data across all your devices and access the web app.',
+                              style: TextStyle(color: Colors.white70, fontSize: 13),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 14),
+                            FilledButton.icon(
+                              onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => const AuthScreen()),
+                              ),
+                              icon: const Icon(Icons.person_add_outlined),
+                              label: const Text('Create Account / Sign In'),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Signed in as ${user.email ?? ''}',
+                                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            if (!isPro) ...[
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE8700A).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFFE8700A).withValues(alpha: 0.3)),
+                                ),
+                                child: const Text(
+                                  'Web app access is included with WreckLog Pro. Upgrade to unlock it.',
+                                  style: TextStyle(color: Color(0xFFE8700A), fontSize: 12),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                            ],
+                            FilledButton.icon(
+                              onPressed: _open,
+                              icon: const Icon(Icons.open_in_new),
+                              label: const Text('Open Web App'),
+                              style: isPro ? null : FilledButton.styleFrom(
+                                backgroundColor: Colors.white24,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// ----------------------------
 /// Settings Tab
 /// ----------------------------
 class SettingsTab extends StatefulWidget {
@@ -12793,7 +12973,13 @@ class _RecentVehicleRow extends StatelessWidget {
 // ── Vehicle thumbnail (first photo or icon fallback) ──────────────────────────
 class _VehicleThumb extends StatefulWidget {
   final String vehicleId;
-  const _VehicleThumb({required this.vehicleId});
+  final double size;
+  final IconData fallbackIcon;
+  const _VehicleThumb({
+    required this.vehicleId,
+    this.size = 72.0,
+    this.fallbackIcon = Icons.directions_car_outlined,
+  });
 
   @override
   State<_VehicleThumb> createState() => _VehicleThumbState();
@@ -12821,7 +13007,7 @@ class _VehicleThumbState extends State<_VehicleThumb> {
 
   @override
   Widget build(BuildContext context) {
-    const size = 72.0;
+    final size = widget.size;
     if (!_loaded) {
       return Container(
           width: size,
@@ -12833,8 +13019,8 @@ class _VehicleThumbState extends State<_VehicleThumb> {
         width: size,
         height: size,
         color: const Color(0xFF1E1E1E),
-        child: const Icon(Icons.directions_car_outlined,
-            color: Color(0xFFE8700A), size: 28),
+        child: Icon(widget.fallbackIcon,
+            color: const Color(0xFFE8700A), size: size * 0.4),
       );
     }
     return SizedBox(
@@ -12847,8 +13033,8 @@ class _VehicleThumbState extends State<_VehicleThumb> {
           width: size,
           height: size,
           color: const Color(0xFF1E1E1E),
-          child: const Icon(Icons.directions_car_outlined,
-              color: Color(0xFFE8700A), size: 28),
+          child: Icon(widget.fallbackIcon,
+              color: const Color(0xFFE8700A), size: size * 0.4),
         ),
       ),
     );
