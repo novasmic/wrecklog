@@ -3237,7 +3237,8 @@ class VehicleCard extends StatelessWidget {
     if (vehicle.usageValue != null) {
       statParts.add('${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}');
     }
-    statParts.add('${vehicle.partsCount} parts');
+    final pc = vehicle.partsCount;
+    statParts.add('$pc ${pc == 1 ? 'part' : 'parts'}');
     if (vehicle.inStockCount > 0) {
       statParts.add('${vehicle.inStockCount} in stock');
     }
@@ -3248,7 +3249,7 @@ class VehicleCard extends StatelessWidget {
     final showPL = vehicle.partsCount > 0;
     final plStr = formatMoneyFromCents(pl);
     // Prefix is everything before P/L, joined with separators.
-    final statPrefix = statParts.isEmpty ? '' : '${statParts.join('  ·  ')}${showPL ? '  ·  ' : ''}';
+    final statPrefix = statParts.isEmpty ? '' : '${statParts.join(' · ')}${showPL ? ' · ' : ''}';
 
     return Opacity(
       opacity: isCompleted ? 0.45 : 1.0,
@@ -12429,8 +12430,8 @@ class _HomeStats {
   static String fmtCompact(int cents) {
     final sign = cents < 0 ? '-' : '';
     final dollars = cents.abs() ~/ 100;
-    if (dollars >= 10000) return '$sign\$${(dollars / 1000).toStringAsFixed(dollars >= 100000 ? 0 : 1)}k';
-    return '$sign\$${StatsTab._withCommas(dollars)}';
+    if (dollars >= 1000) return '$sign\$${(dollars / 1000).toStringAsFixed(dollars >= 10000 ? 0 : 1)}k';
+    return '$sign\$$dollars';
   }
 }
 
@@ -12769,7 +12770,7 @@ class _RecentVehicleRow extends StatelessWidget {
                                   fontWeight: FontWeight.w600)),
                         ),
                         const SizedBox(width: 8),
-                        Text('${vehicle.partsCount} parts',
+                        Text('${vehicle.partsCount} ${vehicle.partsCount == 1 ? 'part' : 'parts'}',
                             style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.38),
                                 fontSize: 11)),
