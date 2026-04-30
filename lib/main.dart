@@ -790,6 +790,7 @@ class _AppShellState extends State<AppShell> {
               vehicles: _vehicles,
               onAddVehicle: _doAddVehicle,
               onOpenVehicle: _openVehicle,
+              onSwitchTab: (i) => setState(() => _tab = i),
             ),
             VehiclesHome(
               loading: _loading,
@@ -12438,6 +12439,7 @@ class HomeTab extends StatefulWidget {
   final List<Vehicle> vehicles;
   final VoidCallback onAddVehicle;
   final Future<void> Function(Vehicle) onOpenVehicle;
+  final void Function(int tab) onSwitchTab;
 
   const HomeTab({
     super.key,
@@ -12445,6 +12447,7 @@ class HomeTab extends StatefulWidget {
     required this.vehicles,
     required this.onAddVehicle,
     required this.onOpenVehicle,
+    required this.onSwitchTab,
   });
 
   @override
@@ -12519,21 +12522,29 @@ class _HomeTabState extends State<HomeTab> {
                     childAspectRatio: 1.05,
                     children: [
                       _StatCard(label: 'Vehicles', value: '${s.vehicles}',
-                          icon: Icons.directions_car_outlined, color: const Color(0xFFE8700A)),
+                          icon: Icons.directions_car_outlined, color: const Color(0xFFE8700A),
+                          onTap: () => widget.onSwitchTab(1)),
                       _StatCard(label: 'Active', value: '${s.active}',
-                          icon: Icons.build_outlined, color: Colors.blueAccent),
+                          icon: Icons.build_outlined, color: Colors.blueAccent,
+                          onTap: () => widget.onSwitchTab(1)),
                       _StatCard(label: 'Parts', value: '${s.parts}',
-                          icon: Icons.category_outlined, color: Colors.white54),
+                          icon: Icons.category_outlined, color: Colors.white54,
+                          onTap: () => widget.onSwitchTab(3)),
                       _StatCard(label: 'Listed', value: '${s.listed}',
-                          icon: Icons.sell_outlined, color: Colors.greenAccent),
+                          icon: Icons.sell_outlined, color: Colors.greenAccent,
+                          onTap: () => widget.onSwitchTab(3)),
                       _StatCard(label: 'Sold', value: '${s.sold}',
-                          icon: Icons.check_circle_outline, color: Colors.tealAccent),
+                          icon: Icons.check_circle_outline, color: Colors.tealAccent,
+                          onTap: () => widget.onSwitchTab(3)),
                       _StatCard(label: 'Scrapped', value: '${s.scrapped}',
-                          icon: Icons.delete_outline, color: Colors.redAccent),
+                          icon: Icons.delete_outline, color: Colors.redAccent,
+                          onTap: () => widget.onSwitchTab(3)),
                       _StatCard(label: 'Revenue', value: _HomeStats.fmtCompact(s.revenueCents),
-                          icon: Icons.attach_money, color: Colors.greenAccent),
+                          icon: Icons.attach_money, color: Colors.greenAccent,
+                          onTap: () => widget.onSwitchTab(3)),
                       _StatCard(label: 'Cost', value: _HomeStats.fmtCompact(s.costCents),
-                          icon: Icons.shopping_cart_outlined, color: Colors.orangeAccent),
+                          icon: Icons.shopping_cart_outlined, color: Colors.orangeAccent,
+                          onTap: () => widget.onSwitchTab(3)),
                     ],
                   ),
 
@@ -12577,49 +12588,59 @@ class _StatCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color color;
+  final VoidCallback? onTap;
 
   const _StatCard({
     required this.label,
     required this.value,
     required this.icon,
     required this.color,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-      decoration: BoxDecoration(
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF242424), Color(0xFF1A1A1A)],
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF242424), Color(0xFF1A1A1A)],
+            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color.withValues(alpha: 0.7), size: 16),
+              const SizedBox(height: 4),
+              Text(value,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 2),
+              Text(label,
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.38),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ],
+          ),
         ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color.withValues(alpha: 0.7), size: 16),
-          const SizedBox(height: 4),
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  height: 1.1),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 2),
-          Text(label,
-              style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.38),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-        ],
       ),
     );
   }
