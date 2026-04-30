@@ -561,7 +561,7 @@ class _AppShellState extends State<AppShell> {
             FilledButton(
               onPressed: () {
                 Navigator.pop(_);
-                launchUrl(Uri.parse('https://app.wrecklog.com.au'));
+                launchUrl(Uri.parse('https://app.wrecklog.com.au'), mode: LaunchMode.externalApplication);
               },
               child: const Text('Open Web App'),
             ),
@@ -1964,7 +1964,7 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 onPressed: () => launchUrl(Uri.parse(
-                    'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')),
+                    'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/'), mode: LaunchMode.externalApplication),
                 child: const Text('Terms of Use',
                     style: TextStyle(fontSize: 10, color: Colors.white38)),
               ),
@@ -1976,7 +1976,7 @@ class _ProPaywallDialogState extends State<_ProPaywallDialog> {
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                onPressed: () => launchUrl(Uri.parse('https://novasmic.com.au')),
+                onPressed: () => launchUrl(Uri.parse('https://wrecklog.com.au/privacy/'), mode: LaunchMode.externalApplication),
                 child: const Text('Privacy Policy',
                     style: TextStyle(fontSize: 10, color: Colors.white38)),
               ),
@@ -2195,7 +2195,7 @@ Future<void> openUrlEasy(BuildContext context, String url) async {
   try {
     final ok = await launchUrl(
       uri,
-      mode: LaunchMode.platformDefault,
+      mode: LaunchMode.externalApplication,
       webOnlyWindowName: '_blank',
     );
     if (!ok && context.mounted) {
