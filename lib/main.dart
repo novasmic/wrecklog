@@ -10179,7 +10179,13 @@ class WebAppTab extends StatelessWidget {
                               icon: const Icon(Icons.person_add_outlined),
                               label: const Text('Create Free Account'),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'No credit card needed',
+                              style: TextStyle(color: Colors.white38, fontSize: 11),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 4),
                             TextButton(
                               onPressed: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => const AuthScreen()),
