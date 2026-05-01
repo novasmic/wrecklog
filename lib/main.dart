@@ -1282,6 +1282,12 @@ class Vehicle {
   String? transmission;
   String? drivetrain;
 
+  /// v1.4 acquisition cost breakdown — all optional.
+  /// When any are set, purchasePriceCents = bid + fees + transport.
+  int? bidPriceCents;
+  int? auctionFeesCents;
+  int? transportCents;
+
   Vehicle({
     required this.id,
     required this.make,
@@ -1304,8 +1310,14 @@ class Vehicle {
     this.engine,
     this.transmission,
     this.drivetrain,
+    this.bidPriceCents,
+    this.auctionFeesCents,
+    this.transportCents,
     List<String>? photoIds,
   }) : photoIds = photoIds ?? [];
+
+  bool get hasCostBreakdown =>
+      bidPriceCents != null || auctionFeesCents != null || transportCents != null;
 
   int get partsCount => parts.length;
 
@@ -1353,6 +1365,9 @@ class Vehicle {
         'engine': engine,
         'transmission': transmission,
         'drivetrain': drivetrain,
+        'bidPriceCents': bidPriceCents,
+        'auctionFeesCents': auctionFeesCents,
+        'transportCents': transportCents,
       };
 
   static Vehicle fromJson(Map<String, dynamic> j) {
@@ -1380,6 +1395,9 @@ class Vehicle {
       engine: j['engine'] as String?,
       transmission: j['transmission'] as String?,
       drivetrain: j['drivetrain'] as String?,
+      bidPriceCents: (j['bidPriceCents'] as num?)?.toInt(),
+      auctionFeesCents: (j['auctionFeesCents'] as num?)?.toInt(),
+      transportCents: (j['transportCents'] as num?)?.toInt(),
     );
   }
 }
@@ -3127,7 +3145,24 @@ class _VehicleDetailsSheet extends StatelessWidget {
       rows.add(_DetailRow(icon: Icons.speed_outlined, label: unitLabel,
           value: '${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}'));
     }
-    if (vehicle.purchasePriceCents != null) {
+    if (vehicle.hasCostBreakdown) {
+      if (vehicle.bidPriceCents != null) {
+        rows.add(_DetailRow(icon: Icons.gavel, label: 'Bid price',
+            value: formatMoneyFromCents(vehicle.bidPriceCents!)));
+      }
+      if (vehicle.auctionFeesCents != null) {
+        rows.add(_DetailRow(icon: Icons.receipt_outlined, label: 'Auction fees',
+            value: formatMoneyFromCents(vehicle.auctionFeesCents!)));
+      }
+      if (vehicle.transportCents != null) {
+        rows.add(_DetailRow(icon: Icons.local_shipping_outlined, label: 'Transport',
+            value: formatMoneyFromCents(vehicle.transportCents!)));
+      }
+      if (vehicle.purchasePriceCents != null) {
+        rows.add(_DetailRow(icon: Icons.attach_money, label: 'Total cost',
+            value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
+      }
+    } else if (vehicle.purchasePriceCents != null) {
       rows.add(_DetailRow(icon: Icons.attach_money, label: 'Purchase price',
           value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
     }
@@ -4055,11 +4090,15 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
   late final TextEditingController _engineCtrl;
   late final TextEditingController _transmissionCtrl;
   late final TextEditingController _drivetrainCtrl;
+  late final TextEditingController _bidCtrl;
+  late final TextEditingController _feesCtrl;
+  late final TextEditingController _transportCtrl;
 
   late ItemType _itemType;
   late DateTime _acquiredAt;
   late String _usageUnit;
   late String _makeValue;
+  bool _showCostBreakdown = false;
 
   @override
   void initState() {
@@ -4083,6 +4122,16 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
     _engineCtrl = TextEditingController(text: v.engine ?? '');
     _transmissionCtrl = TextEditingController(text: v.transmission ?? '');
     _drivetrainCtrl = TextEditingController(text: v.drivetrain ?? '');
+    _bidCtrl = TextEditingController(
+      text: v.bidPriceCents == null ? '' : (v.bidPriceCents! / 100).toStringAsFixed(2),
+    );
+    _feesCtrl = TextEditingController(
+      text: v.auctionFeesCents == null ? '' : (v.auctionFeesCents! / 100).toStringAsFixed(2),
+    );
+    _transportCtrl = TextEditingController(
+      text: v.transportCents == null ? '' : (v.transportCents! / 100).toStringAsFixed(2),
+    );
+    _showCostBreakdown = v.hasCostBreakdown;
     _itemType = v.itemType;
     _acquiredAt = v.acquiredAt;
     _usageUnit = v.usageUnit;
@@ -4103,6 +4152,9 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
     _engineCtrl.dispose();
     _transmissionCtrl.dispose();
     _drivetrainCtrl.dispose();
+    _bidCtrl.dispose();
+    _feesCtrl.dispose();
+    _transportCtrl.dispose();
     super.dispose();
   }
 
@@ -4118,14 +4170,31 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
     setState(() => _acquiredAt = picked);
   }
 
+  void _updateTotalFromBreakdown() {
+    final bid       = parseMoneyToCents(_bidCtrl.text) ?? 0;
+    final fees      = parseMoneyToCents(_feesCtrl.text) ?? 0;
+    final transport = parseMoneyToCents(_transportCtrl.text) ?? 0;
+    final total     = bid + fees + transport;
+    _purchaseCtrl.text = total == 0 ? '' : (total / 100).toStringAsFixed(2);
+  }
+
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final year = int.tryParse(_yearCtrl.text.trim()) ?? widget.vehicle.year;
-    final purchaseCents = parseMoneyToCents(_purchaseCtrl.text);
     final ident = normalizeIdentifier(_idCtrl.text);
     final usageValue = int.tryParse(_usageCtrl.text.trim());
     final notes = _notesCtrl.text.trim();
+
+    final bidCents       = parseMoneyToCents(_bidCtrl.text);
+    final feesCents      = parseMoneyToCents(_feesCtrl.text);
+    final transportCents = parseMoneyToCents(_transportCtrl.text);
+    final hasBreakdown   = bidCents != null || feesCents != null || transportCents != null;
+
+    // If breakdown entered, total cost = sum of sub-fields; otherwise use direct entry.
+    final purchaseCents = hasBreakdown
+        ? (bidCents ?? 0) + (feesCents ?? 0) + (transportCents ?? 0)
+        : parseMoneyToCents(_purchaseCtrl.text);
 
     final updated = Vehicle(
       id: widget.vehicle.id,
@@ -4133,7 +4202,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       model: _modelCtrl.text.trim(),
       year: year,
       itemType: _itemType,
-      status: widget.vehicle.status, // preserved from existing data
+      status: widget.vehicle.status,
       acquiredAt: _acquiredAt,
       purchasePriceCents: purchaseCents,
       identifier: ident.isEmpty ? null : ident,
@@ -4147,7 +4216,10 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
       engine: _engineCtrl.text.trim().isEmpty ? null : _engineCtrl.text.trim(),
       transmission: _transmissionCtrl.text.trim().isEmpty ? null : _transmissionCtrl.text.trim(),
       drivetrain: _drivetrainCtrl.text.trim().isEmpty ? null : _drivetrainCtrl.text.trim(),
-      createdAt: widget.vehicle.createdAt, // preserve original creation time
+      bidPriceCents: bidCents,
+      auctionFeesCents: feesCents,
+      transportCents: transportCents,
+      createdAt: widget.vehicle.createdAt,
       updatedAt: DateTime.now(),
     );
 
@@ -4320,12 +4392,65 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _purchaseCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Purchase price (optional)',
+                    readOnly: _showCostBreakdown,
+                    decoration: InputDecoration(
+                      labelText: _showCostBreakdown ? 'Total cost (calculated)' : 'Purchase price (optional)',
                       prefixText: '\$',
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
+                  const SizedBox(height: 4),
+                  // Cost breakdown toggle
+                  GestureDetector(
+                    onTap: () => setState(() => _showCostBreakdown = !_showCostBreakdown),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _showCostBreakdown ? Icons.expand_less : Icons.expand_more,
+                          size: 16,
+                          color: Colors.white38,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _showCostBreakdown ? 'Hide cost breakdown' : 'Add cost breakdown (bid, fees, transport)',
+                          style: const TextStyle(fontSize: 11, color: Colors.white38),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_showCostBreakdown) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _bidCtrl,
+                            decoration: const InputDecoration(labelText: 'Bid price', prefixText: '\$'),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            onChanged: (_) => _updateTotalFromBreakdown(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _feesCtrl,
+                            decoration: const InputDecoration(labelText: 'Auction fees', prefixText: '\$'),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            onChanged: (_) => _updateTotalFromBreakdown(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _transportCtrl,
+                            decoration: const InputDecoration(labelText: 'Transport', prefixText: '\$'),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            onChanged: (_) => _updateTotalFromBreakdown(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _notesCtrl,

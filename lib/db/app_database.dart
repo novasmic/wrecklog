@@ -41,6 +41,9 @@ class VehiclesTable extends Table {
   TextColumn get drivetrain         => text().nullable()();
   TextColumn get ownerId            => text().nullable()(); // reserved for future auth
   IntColumn  get deletedAt          => integer().nullable()(); // null = active
+  IntColumn  get bidPriceCents      => integer().nullable()();
+  IntColumn  get auctionFeesCents   => integer().nullable()();
+  IntColumn  get transportCents     => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -137,7 +140,7 @@ class AppDatabase extends _$AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -150,6 +153,11 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) {
         await m.addColumn(partsTable, partsTable.interchangeGroupId);
         await m.createTable(interchangeGroupsTable);
+      }
+      if (from < 3) {
+        await customStatement('ALTER TABLE vehicles ADD COLUMN bid_price_cents INTEGER');
+        await customStatement('ALTER TABLE vehicles ADD COLUMN auction_fees_cents INTEGER');
+        await customStatement('ALTER TABLE vehicles ADD COLUMN transport_cents INTEGER');
       }
     },
   );

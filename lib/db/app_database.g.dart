@@ -138,6 +138,24 @@ class $VehiclesTableTable extends VehiclesTable
   late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
       'deleted_at', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _bidPriceCentsMeta =
+      const VerificationMeta('bidPriceCents');
+  @override
+  late final GeneratedColumn<int> bidPriceCents = GeneratedColumn<int>(
+      'bid_price_cents', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _auctionFeesCentsMeta =
+      const VerificationMeta('auctionFeesCents');
+  @override
+  late final GeneratedColumn<int> auctionFeesCents = GeneratedColumn<int>(
+      'auction_fees_cents', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _transportCentsMeta =
+      const VerificationMeta('transportCents');
+  @override
+  late final GeneratedColumn<int> transportCents = GeneratedColumn<int>(
+      'transport_cents', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -161,7 +179,10 @@ class $VehiclesTableTable extends VehiclesTable
         transmission,
         drivetrain,
         ownerId,
-        deletedAt
+        deletedAt,
+        bidPriceCents,
+        auctionFeesCents,
+        transportCents
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -288,6 +309,24 @@ class $VehiclesTableTable extends VehiclesTable
       context.handle(_deletedAtMeta,
           deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
     }
+    if (data.containsKey('bid_price_cents')) {
+      context.handle(
+          _bidPriceCentsMeta,
+          bidPriceCents.isAcceptableOrUnknown(
+              data['bid_price_cents']!, _bidPriceCentsMeta));
+    }
+    if (data.containsKey('auction_fees_cents')) {
+      context.handle(
+          _auctionFeesCentsMeta,
+          auctionFeesCents.isAcceptableOrUnknown(
+              data['auction_fees_cents']!, _auctionFeesCentsMeta));
+    }
+    if (data.containsKey('transport_cents')) {
+      context.handle(
+          _transportCentsMeta,
+          transportCents.isAcceptableOrUnknown(
+              data['transport_cents']!, _transportCentsMeta));
+    }
     return context;
   }
 
@@ -341,6 +380,12 @@ class $VehiclesTableTable extends VehiclesTable
           .read(DriftSqlType.string, data['${effectivePrefix}owner_id']),
       deletedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}deleted_at']),
+      bidPriceCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}bid_price_cents']),
+      auctionFeesCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}auction_fees_cents']),
+      transportCents: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}transport_cents']),
     );
   }
 
@@ -373,6 +418,9 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
   final String? drivetrain;
   final String? ownerId;
   final int? deletedAt;
+  final int? bidPriceCents;
+  final int? auctionFeesCents;
+  final int? transportCents;
   const VehicleRow(
       {required this.id,
       required this.make,
@@ -395,7 +443,10 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
       this.transmission,
       this.drivetrain,
       this.ownerId,
-      this.deletedAt});
+      this.deletedAt,
+      this.bidPriceCents,
+      this.auctionFeesCents,
+      this.transportCents});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -443,6 +494,15 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<int>(deletedAt);
     }
+    if (!nullToAbsent || bidPriceCents != null) {
+      map['bid_price_cents'] = Variable<int>(bidPriceCents);
+    }
+    if (!nullToAbsent || auctionFeesCents != null) {
+      map['auction_fees_cents'] = Variable<int>(auctionFeesCents);
+    }
+    if (!nullToAbsent || transportCents != null) {
+      map['transport_cents'] = Variable<int>(transportCents);
+    }
     return map;
   }
 
@@ -488,6 +548,15 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      bidPriceCents: bidPriceCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bidPriceCents),
+      auctionFeesCents: auctionFeesCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(auctionFeesCents),
+      transportCents: transportCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transportCents),
     );
   }
 
@@ -517,6 +586,9 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
       drivetrain: serializer.fromJson<String?>(json['drivetrain']),
       ownerId: serializer.fromJson<String?>(json['ownerId']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+      bidPriceCents: serializer.fromJson<int?>(json['bidPriceCents']),
+      auctionFeesCents: serializer.fromJson<int?>(json['auctionFeesCents']),
+      transportCents: serializer.fromJson<int?>(json['transportCents']),
     );
   }
   @override
@@ -545,6 +617,9 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
       'drivetrain': serializer.toJson<String?>(drivetrain),
       'ownerId': serializer.toJson<String?>(ownerId),
       'deletedAt': serializer.toJson<int?>(deletedAt),
+      'bidPriceCents': serializer.toJson<int?>(bidPriceCents),
+      'auctionFeesCents': serializer.toJson<int?>(auctionFeesCents),
+      'transportCents': serializer.toJson<int?>(transportCents),
     };
   }
 
@@ -570,7 +645,10 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
           Value<String?> transmission = const Value.absent(),
           Value<String?> drivetrain = const Value.absent(),
           Value<String?> ownerId = const Value.absent(),
-          Value<int?> deletedAt = const Value.absent()}) =>
+          Value<int?> deletedAt = const Value.absent(),
+          Value<int?> bidPriceCents = const Value.absent(),
+          Value<int?> auctionFeesCents = const Value.absent(),
+          Value<int?> transportCents = const Value.absent()}) =>
       VehicleRow(
         id: id ?? this.id,
         make: make ?? this.make,
@@ -597,6 +675,13 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
         drivetrain: drivetrain.present ? drivetrain.value : this.drivetrain,
         ownerId: ownerId.present ? ownerId.value : this.ownerId,
         deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+        bidPriceCents:
+            bidPriceCents.present ? bidPriceCents.value : this.bidPriceCents,
+        auctionFeesCents: auctionFeesCents.present
+            ? auctionFeesCents.value
+            : this.auctionFeesCents,
+        transportCents:
+            transportCents.present ? transportCents.value : this.transportCents,
       );
   VehicleRow copyWithCompanion(VehiclesTableCompanion data) {
     return VehicleRow(
@@ -630,6 +715,15 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
           data.drivetrain.present ? data.drivetrain.value : this.drivetrain,
       ownerId: data.ownerId.present ? data.ownerId.value : this.ownerId,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      bidPriceCents: data.bidPriceCents.present
+          ? data.bidPriceCents.value
+          : this.bidPriceCents,
+      auctionFeesCents: data.auctionFeesCents.present
+          ? data.auctionFeesCents.value
+          : this.auctionFeesCents,
+      transportCents: data.transportCents.present
+          ? data.transportCents.value
+          : this.transportCents,
     );
   }
 
@@ -657,7 +751,10 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
           ..write('transmission: $transmission, ')
           ..write('drivetrain: $drivetrain, ')
           ..write('ownerId: $ownerId, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('bidPriceCents: $bidPriceCents, ')
+          ..write('auctionFeesCents: $auctionFeesCents, ')
+          ..write('transportCents: $transportCents')
           ..write(')'))
         .toString();
   }
@@ -685,7 +782,10 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
         transmission,
         drivetrain,
         ownerId,
-        deletedAt
+        deletedAt,
+        bidPriceCents,
+        auctionFeesCents,
+        transportCents
       ]);
   @override
   bool operator ==(Object other) =>
@@ -712,7 +812,10 @@ class VehicleRow extends DataClass implements Insertable<VehicleRow> {
           other.transmission == this.transmission &&
           other.drivetrain == this.drivetrain &&
           other.ownerId == this.ownerId &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.bidPriceCents == this.bidPriceCents &&
+          other.auctionFeesCents == this.auctionFeesCents &&
+          other.transportCents == this.transportCents);
 }
 
 class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
@@ -738,6 +841,9 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
   final Value<String?> drivetrain;
   final Value<String?> ownerId;
   final Value<int?> deletedAt;
+  final Value<int?> bidPriceCents;
+  final Value<int?> auctionFeesCents;
+  final Value<int?> transportCents;
   final Value<int> rowid;
   const VehiclesTableCompanion({
     this.id = const Value.absent(),
@@ -762,6 +868,9 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
     this.drivetrain = const Value.absent(),
     this.ownerId = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.bidPriceCents = const Value.absent(),
+    this.auctionFeesCents = const Value.absent(),
+    this.transportCents = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   VehiclesTableCompanion.insert({
@@ -787,6 +896,9 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
     this.drivetrain = const Value.absent(),
     this.ownerId = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.bidPriceCents = const Value.absent(),
+    this.auctionFeesCents = const Value.absent(),
+    this.transportCents = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : id = Value(id),
         make = Value(make),
@@ -819,6 +931,9 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
     Expression<String>? drivetrain,
     Expression<String>? ownerId,
     Expression<int>? deletedAt,
+    Expression<int>? bidPriceCents,
+    Expression<int>? auctionFeesCents,
+    Expression<int>? transportCents,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -845,6 +960,9 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
       if (drivetrain != null) 'drivetrain': drivetrain,
       if (ownerId != null) 'owner_id': ownerId,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (bidPriceCents != null) 'bid_price_cents': bidPriceCents,
+      if (auctionFeesCents != null) 'auction_fees_cents': auctionFeesCents,
+      if (transportCents != null) 'transport_cents': transportCents,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -872,6 +990,9 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
       Value<String?>? drivetrain,
       Value<String?>? ownerId,
       Value<int?>? deletedAt,
+      Value<int?>? bidPriceCents,
+      Value<int?>? auctionFeesCents,
+      Value<int?>? transportCents,
       Value<int>? rowid}) {
     return VehiclesTableCompanion(
       id: id ?? this.id,
@@ -896,6 +1017,9 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
       drivetrain: drivetrain ?? this.drivetrain,
       ownerId: ownerId ?? this.ownerId,
       deletedAt: deletedAt ?? this.deletedAt,
+      bidPriceCents: bidPriceCents ?? this.bidPriceCents,
+      auctionFeesCents: auctionFeesCents ?? this.auctionFeesCents,
+      transportCents: transportCents ?? this.transportCents,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -969,6 +1093,15 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<int>(deletedAt.value);
     }
+    if (bidPriceCents.present) {
+      map['bid_price_cents'] = Variable<int>(bidPriceCents.value);
+    }
+    if (auctionFeesCents.present) {
+      map['auction_fees_cents'] = Variable<int>(auctionFeesCents.value);
+    }
+    if (transportCents.present) {
+      map['transport_cents'] = Variable<int>(transportCents.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1000,6 +1133,9 @@ class VehiclesTableCompanion extends UpdateCompanion<VehicleRow> {
           ..write('drivetrain: $drivetrain, ')
           ..write('ownerId: $ownerId, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('bidPriceCents: $bidPriceCents, ')
+          ..write('auctionFeesCents: $auctionFeesCents, ')
+          ..write('transportCents: $transportCents, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3252,6 +3388,9 @@ typedef $$VehiclesTableTableCreateCompanionBuilder = VehiclesTableCompanion
   Value<String?> drivetrain,
   Value<String?> ownerId,
   Value<int?> deletedAt,
+  Value<int?> bidPriceCents,
+  Value<int?> auctionFeesCents,
+  Value<int?> transportCents,
   Value<int> rowid,
 });
 typedef $$VehiclesTableTableUpdateCompanionBuilder = VehiclesTableCompanion
@@ -3278,6 +3417,9 @@ typedef $$VehiclesTableTableUpdateCompanionBuilder = VehiclesTableCompanion
   Value<String?> drivetrain,
   Value<String?> ownerId,
   Value<int?> deletedAt,
+  Value<int?> bidPriceCents,
+  Value<int?> auctionFeesCents,
+  Value<int?> transportCents,
   Value<int> rowid,
 });
 
@@ -3356,6 +3498,17 @@ class $$VehiclesTableTableFilterComposer
 
   ColumnFilters<int> get deletedAt => $composableBuilder(
       column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get bidPriceCents => $composableBuilder(
+      column: $table.bidPriceCents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get auctionFeesCents => $composableBuilder(
+      column: $table.auctionFeesCents,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get transportCents => $composableBuilder(
+      column: $table.transportCents,
+      builder: (column) => ColumnFilters(column));
 }
 
 class $$VehiclesTableTableOrderingComposer
@@ -3434,6 +3587,18 @@ class $$VehiclesTableTableOrderingComposer
 
   ColumnOrderings<int> get deletedAt => $composableBuilder(
       column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get bidPriceCents => $composableBuilder(
+      column: $table.bidPriceCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get auctionFeesCents => $composableBuilder(
+      column: $table.auctionFeesCents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get transportCents => $composableBuilder(
+      column: $table.transportCents,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$VehiclesTableTableAnnotationComposer
@@ -3510,6 +3675,15 @@ class $$VehiclesTableTableAnnotationComposer
 
   GeneratedColumn<int> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get bidPriceCents => $composableBuilder(
+      column: $table.bidPriceCents, builder: (column) => column);
+
+  GeneratedColumn<int> get auctionFeesCents => $composableBuilder(
+      column: $table.auctionFeesCents, builder: (column) => column);
+
+  GeneratedColumn<int> get transportCents => $composableBuilder(
+      column: $table.transportCents, builder: (column) => column);
 }
 
 class $$VehiclesTableTableTableManager extends RootTableManager<
@@ -3560,6 +3734,9 @@ class $$VehiclesTableTableTableManager extends RootTableManager<
             Value<String?> drivetrain = const Value.absent(),
             Value<String?> ownerId = const Value.absent(),
             Value<int?> deletedAt = const Value.absent(),
+            Value<int?> bidPriceCents = const Value.absent(),
+            Value<int?> auctionFeesCents = const Value.absent(),
+            Value<int?> transportCents = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VehiclesTableCompanion(
@@ -3585,6 +3762,9 @@ class $$VehiclesTableTableTableManager extends RootTableManager<
             drivetrain: drivetrain,
             ownerId: ownerId,
             deletedAt: deletedAt,
+            bidPriceCents: bidPriceCents,
+            auctionFeesCents: auctionFeesCents,
+            transportCents: transportCents,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -3610,6 +3790,9 @@ class $$VehiclesTableTableTableManager extends RootTableManager<
             Value<String?> drivetrain = const Value.absent(),
             Value<String?> ownerId = const Value.absent(),
             Value<int?> deletedAt = const Value.absent(),
+            Value<int?> bidPriceCents = const Value.absent(),
+            Value<int?> auctionFeesCents = const Value.absent(),
+            Value<int?> transportCents = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               VehiclesTableCompanion.insert(
@@ -3635,6 +3818,9 @@ class $$VehiclesTableTableTableManager extends RootTableManager<
             drivetrain: drivetrain,
             ownerId: ownerId,
             deletedAt: deletedAt,
+            bidPriceCents: bidPriceCents,
+            auctionFeesCents: auctionFeesCents,
+            transportCents: transportCents,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

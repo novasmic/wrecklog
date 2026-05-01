@@ -152,6 +152,9 @@ class VehicleStore {
       engine:            r.engine,
       transmission:      r.transmission,
       drivetrain:        r.drivetrain,
+      bidPriceCents:     r.bidPriceCents,
+      auctionFeesCents:  r.auctionFeesCents,
+      transportCents:    r.transportCents,
       parts:             parts,
     );
   }
@@ -235,6 +238,9 @@ class VehicleStore {
       engine:             Value(v.engine),
       transmission:       Value(v.transmission),
       drivetrain:         Value(v.drivetrain),
+      bidPriceCents:      Value(v.bidPriceCents),
+      auctionFeesCents:   Value(v.auctionFeesCents),
+      transportCents:     Value(v.transportCents),
       ownerId:            const Value(null),
       deletedAt:          const Value(null),
     );
