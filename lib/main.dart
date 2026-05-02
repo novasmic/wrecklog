@@ -4434,7 +4434,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                         Expanded(
                           child: TextFormField(
                             controller: _feesCtrl,
-                            decoration: const InputDecoration(labelText: 'Auction fees', prefixText: '\$'),
+                            decoration: const InputDecoration(labelText: 'Fees', prefixText: '\$'),
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             onChanged: (_) => _updateTotalFromBreakdown(),
                           ),
@@ -4569,6 +4569,40 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
           .toList();
       VehicleStore.saveVehicles(updated);
     }
+  }
+
+  void _pickStatus(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Change Status'),
+        children: VehicleStatus.values.map((s) {
+          final isSelected = s == _v.status;
+          final color = switch (s) {
+            VehicleStatus.whole     => const Color(0xFFE53935),
+            VehicleStatus.stripping => const Color(0xFF4CAF50),
+            VehicleStatus.shellGone => const Color(0xFFE8700A),
+          };
+          return SimpleDialogOption(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (isSelected) return;
+              setState(() => _v.status = s);
+              final allUpdated = widget.allVehicles.map((v) => v.id == _v.id ? _v : v).toList();
+              await VehicleStore.saveVehicles(allUpdated);
+              if (auth.uid != null) FirestoreService.upsertVehicle(auth.uid!, _v.toJson());
+            },
+            child: Row(
+              children: [
+                Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked, color: color, size: 18),
+                const SizedBox(width: 12),
+                Text(s.label, style: TextStyle(color: isSelected ? color : Colors.white70, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   Future<void> _editVehicle() async {
@@ -5313,15 +5347,19 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                InkWell(
+                  onTap: () => _pickStatus(context),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(statusLabel,
+                        style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600)),
                   ),
-                  child: Text(statusLabel,
-                      style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600)),
                 ),
                 if (infoItems.isNotEmpty) ...[
                   const SizedBox(height: 10),
