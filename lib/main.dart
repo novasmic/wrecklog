@@ -4408,12 +4408,12 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
                         Icon(
                           _showCostBreakdown ? Icons.expand_less : Icons.expand_more,
                           size: 16,
-                          color: Colors.white38,
+                          color: Colors.redAccent,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           _showCostBreakdown ? 'Hide cost breakdown' : 'Add cost breakdown (bid, fees, transport)',
-                          style: const TextStyle(fontSize: 11, color: Colors.white38),
+                          style: const TextStyle(fontSize: 11, color: Colors.redAccent),
                         ),
                       ],
                     ),
@@ -5340,9 +5340,22 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
             };
             final statusLabel = _v.status.label;
             final infoItems = <(String, String)>[];
-            if ((_v.color).trim().isNotEmpty) infoItems.add(('Colour', _v.color.trim()));
-            if ((_v.identifier ?? '').trim().isNotEmpty) infoItems.add(('VIN / Rego', _v.identifier!.trim()));
-            if (_v.usageValue != null) infoItems.add(('Odometer', '${_formatUsage(_v.usageValue!)} ${_v.usageUnit}'));
+            if ((_v.color).trim().isNotEmpty)             infoItems.add(('Colour',       _v.color.trim()));
+            if ((_v.identifier ?? '').trim().isNotEmpty)  infoItems.add(('VIN / Rego',   _v.identifier!.trim()));
+            if (_v.itemType != ItemType.other)            infoItems.add(('Type',          _v.itemType.label));
+            if ((_v.engine ?? '').trim().isNotEmpty)      infoItems.add(('Engine',        _v.engine!.trim()));
+            if ((_v.transmission ?? '').trim().isNotEmpty) infoItems.add(('Transmission', _v.transmission!.trim()));
+            if ((_v.drivetrain ?? '').trim().isNotEmpty)  infoItems.add(('Drivetrain',    _v.drivetrain!.trim()));
+            if (_v.usageValue != null)                    infoItems.add(('Odometer',      '${_formatUsage(_v.usageValue!)} ${_v.usageUnit}'));
+            if (_v.hasCostBreakdown) {
+              if (_v.bidPriceCents != null)       infoItems.add(('Bid Price',    formatMoneyFromCents(_v.bidPriceCents!)));
+              if (_v.auctionFeesCents != null)    infoItems.add(('Fees',         formatMoneyFromCents(_v.auctionFeesCents!)));
+              if (_v.transportCents != null)      infoItems.add(('Transport',    formatMoneyFromCents(_v.transportCents!)));
+              if (_v.purchasePriceCents != null)  infoItems.add(('Total Cost',   formatMoneyFromCents(_v.purchasePriceCents!)));
+            } else if (_v.purchasePriceCents != null) {
+              infoItems.add(('Cost Price', formatMoneyFromCents(_v.purchasePriceCents!)));
+            }
+            infoItems.add(('Acquired', '${_v.acquiredAt.day}/${_v.acquiredAt.month}/${_v.acquiredAt.year}'));
             if ((_v.notes ?? '').trim().isNotEmpty) infoItems.add(('Notes', _v.notes!.trim()));
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
