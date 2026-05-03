@@ -6990,7 +6990,7 @@ class _AddPartScreenState extends State<AddPartScreen> {
   }
 
   /// When part number loses focus, look up the most recent part with that number
-  /// and prefill all empty fields from it.
+  /// and pre-fill all fields from it.
   void _onPnFocusChanged() {
     if (_pnFocusNode.hasFocus) return;
     final pn = _pnCtrl.text.trim();
@@ -7007,45 +7007,34 @@ class _AddPartScreenState extends State<AddPartScreen> {
       }
     }
     if (best == null) return;
-    final b = best; // non-nullable local for use inside setState closure
+    final b = best;
 
-    bool filled = false;
     setState(() {
-      if (_nameCtrl.text.isEmpty) {
-        _nameCtrl.text = b.name;
-        filled = true;
+      _nameCtrl.text = b.name;
+      if (b.category != null) {
+        _category          = b.category;
+        _suggestedCategory = b.category;
       }
-      if (_category == null && b.category != null) {
-        _category = b.category;
-        filled = true;
+      if (b.partCondition != null && _conditions.contains(b.partCondition)) {
+        _condition = b.partCondition;
       }
-      if (_condition == null && b.partCondition != null) {
-        final c = b.partCondition!;
-        if (_conditions.contains(c)) { _condition = c; filled = true; }
+      if (b.side != null) {
+        _sides
+          ..clear()
+          ..addAll(b.side!.split(' ').where((s) => s.isNotEmpty));
       }
-      if (_sides.isEmpty && b.side != null) {
-        _sides.addAll(b.side!.split(' ').where((s) => s.isNotEmpty));
-        filled = true;
-      }
-      if (_locCtrl.text.isEmpty && (b.location ?? '').isNotEmpty) {
-        _locCtrl.text = b.location!;
-        filled = true;
-      }
+      if ((b.location ?? '').isNotEmpty) _locCtrl.text = b.location!;
       if (b.askingPriceCents != null) {
         _priceHint = 'Last used: ${formatMoneyFromCents(b.askingPriceCents!)}';
       }
-      if (_notesCtrl.text.isEmpty && (b.notes ?? '').isNotEmpty) {
-        _notesCtrl.text = b.notes!;
-        filled = true;
-      }
-      if (b.category != null) _suggestedCategory = b.category;
+      if ((b.notes ?? '').isNotEmpty) _notesCtrl.text = b.notes!;
     });
 
-    if (filled && mounted) {
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Prefilled from a previous entry — change anything you need'),
-          duration: Duration(seconds: 3),
+        SnackBar(
+          content: Text('Pre-filled from "${b.name}". Remove or replace any details you don\'t want.'),
+          duration: const Duration(seconds: 4),
         ),
       );
     }
