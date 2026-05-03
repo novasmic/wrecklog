@@ -3137,45 +3137,40 @@ class _VehicleDetailsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = <Widget>[];
 
-    if (vehicle.color.isNotEmpty) {
+    rows.add(_DetailRow(icon: Icons.flag_outlined, label: 'Status', value: vehicle.status.label));
+    rows.add(_DetailRow(icon: Icons.calendar_today_outlined, label: 'Acquired',
+        value: '${vehicle.acquiredAt.day}/${vehicle.acquiredAt.month}/${vehicle.acquiredAt.year}'));
+    if (vehicle.itemType != ItemType.other)
+      rows.add(_DetailRow(icon: Icons.category_outlined, label: 'Type', value: vehicle.itemType.label));
+    if (vehicle.color.isNotEmpty)
       rows.add(_DetailRow(icon: Icons.palette_outlined, label: 'Colour', value: vehicle.color));
-    }
+    if ((vehicle.identifier ?? '').isNotEmpty)
+      rows.add(_DetailRow(icon: Icons.tag, label: 'VIN / Rego / ID', value: vehicle.identifier!));
+    if ((vehicle.engine ?? '').isNotEmpty)
+      rows.add(_DetailRow(icon: Icons.settings_outlined, label: 'Engine', value: vehicle.engine!));
+    if ((vehicle.transmission ?? '').isNotEmpty)
+      rows.add(_DetailRow(icon: Icons.sync_alt, label: 'Transmission', value: vehicle.transmission!));
+    if ((vehicle.drivetrain ?? '').isNotEmpty)
+      rows.add(_DetailRow(icon: Icons.directions_car_outlined, label: 'Drivetrain', value: vehicle.drivetrain!));
     if (vehicle.usageValue != null) {
       final unitLabel = vehicle.usageUnit == 'hours' ? 'Hours' : vehicle.usageUnit == 'miles' ? 'Miles' : 'Kilometres';
       rows.add(_DetailRow(icon: Icons.speed_outlined, label: unitLabel,
           value: '${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}'));
     }
     if (vehicle.hasCostBreakdown) {
-      if (vehicle.bidPriceCents != null) {
-        rows.add(_DetailRow(icon: Icons.gavel, label: 'Bid price',
-            value: formatMoneyFromCents(vehicle.bidPriceCents!)));
-      }
-      if (vehicle.auctionFeesCents != null) {
-        rows.add(_DetailRow(icon: Icons.receipt_outlined, label: 'Auction fees',
-            value: formatMoneyFromCents(vehicle.auctionFeesCents!)));
-      }
-      if (vehicle.transportCents != null) {
-        rows.add(_DetailRow(icon: Icons.local_shipping_outlined, label: 'Transport',
-            value: formatMoneyFromCents(vehicle.transportCents!)));
-      }
-      if (vehicle.purchasePriceCents != null) {
-        rows.add(_DetailRow(icon: Icons.attach_money, label: 'Total cost',
-            value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
-      }
+      if (vehicle.bidPriceCents != null)
+        rows.add(_DetailRow(icon: Icons.gavel, label: 'Bid price', value: formatMoneyFromCents(vehicle.bidPriceCents!)));
+      if (vehicle.auctionFeesCents != null)
+        rows.add(_DetailRow(icon: Icons.receipt_outlined, label: 'Auction fees', value: formatMoneyFromCents(vehicle.auctionFeesCents!)));
+      if (vehicle.transportCents != null)
+        rows.add(_DetailRow(icon: Icons.local_shipping_outlined, label: 'Transport', value: formatMoneyFromCents(vehicle.transportCents!)));
+      if (vehicle.purchasePriceCents != null)
+        rows.add(_DetailRow(icon: Icons.attach_money, label: 'Total cost', value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
     } else if (vehicle.purchasePriceCents != null) {
-      rows.add(_DetailRow(icon: Icons.attach_money, label: 'Purchase price',
-          value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
+      rows.add(_DetailRow(icon: Icons.attach_money, label: 'Purchase price', value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
     }
-    rows.add(_DetailRow(icon: Icons.flag_outlined, label: 'Status',
-        value: vehicle.status.label));
-    rows.add(_DetailRow(icon: Icons.calendar_today_outlined, label: 'Acquired',
-        value: '${vehicle.acquiredAt.day}/${vehicle.acquiredAt.month}/${vehicle.acquiredAt.year}'));
-    if ((vehicle.identifier ?? '').isNotEmpty) {
-      rows.add(_DetailRow(icon: Icons.tag, label: 'VIN / Rego / ID', value: vehicle.identifier!));
-    }
-    if ((vehicle.notes ?? '').trim().isNotEmpty) {
+    if ((vehicle.notes ?? '').trim().isNotEmpty)
       rows.add(_DetailRow(icon: Icons.notes_outlined, label: 'Notes', value: vehicle.notes!.trim()));
-    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -5331,76 +5326,51 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
             }),
           ],
 
-              // ── Status chip + vehicle info card ─────────────────────────
-          Builder(builder: (_) {
+              // ── Status chip + Details button ─────────────────────────
+          Builder(builder: (ctx) {
             final statusColor = switch (_v.status) {
               VehicleStatus.whole     => const Color(0xFFE53935),
               VehicleStatus.stripping => const Color(0xFF4CAF50),
               VehicleStatus.shellGone => const Color(0xFFE8700A),
             };
-            final statusLabel = _v.status.label;
-            final infoItems = <(String, String)>[];
-            if ((_v.color).trim().isNotEmpty)             infoItems.add(('Colour',       _v.color.trim()));
-            if ((_v.identifier ?? '').trim().isNotEmpty)  infoItems.add(('VIN / Rego',   _v.identifier!.trim()));
-            if (_v.itemType != ItemType.other)            infoItems.add(('Type',          _v.itemType.label));
-            if ((_v.engine ?? '').trim().isNotEmpty)      infoItems.add(('Engine',        _v.engine!.trim()));
-            if ((_v.transmission ?? '').trim().isNotEmpty) infoItems.add(('Transmission', _v.transmission!.trim()));
-            if ((_v.drivetrain ?? '').trim().isNotEmpty)  infoItems.add(('Drivetrain',    _v.drivetrain!.trim()));
-            if (_v.usageValue != null)                    infoItems.add(('Odometer',      '${_formatUsage(_v.usageValue!)} ${_v.usageUnit}'));
-            if (_v.hasCostBreakdown) {
-              if (_v.bidPriceCents != null)       infoItems.add(('Bid Price',    formatMoneyFromCents(_v.bidPriceCents!)));
-              if (_v.auctionFeesCents != null)    infoItems.add(('Fees',         formatMoneyFromCents(_v.auctionFeesCents!)));
-              if (_v.transportCents != null)      infoItems.add(('Transport',    formatMoneyFromCents(_v.transportCents!)));
-              if (_v.purchasePriceCents != null)  infoItems.add(('Total Cost',   formatMoneyFromCents(_v.purchasePriceCents!)));
-            } else if (_v.purchasePriceCents != null) {
-              infoItems.add(('Cost Price', formatMoneyFromCents(_v.purchasePriceCents!)));
-            }
-            infoItems.add(('Acquired', '${_v.acquiredAt.day}/${_v.acquiredAt.month}/${_v.acquiredAt.year}'));
-            if ((_v.notes ?? '').trim().isNotEmpty) infoItems.add(('Notes', _v.notes!.trim()));
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                InkWell(
-                  onTap: () => _pickStatus(context),
-                  borderRadius: BorderRadius.circular(4),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  InkWell(
+                    onTap: () => _pickStatus(ctx),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(_v.status.label,
+                          style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600)),
                     ),
-                    child: Text(statusLabel,
-                        style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600)),
                   ),
-                ),
-                if (infoItems.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                    ),
-                    child: Wrap(
-                      spacing: 24,
-                      runSpacing: 10,
-                      children: infoItems.map(((String, String) item) => Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(item.$1, style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.35), fontWeight: FontWeight.w600, letterSpacing: 0.5)),
-                          const SizedBox(height: 2),
-                          Text(item.$2, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500)),
-                        ],
-                      )).toList(),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => _showVehicleDetailsSheet(ctx, _v),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.info_outline, size: 12, color: Colors.white.withValues(alpha: 0.5)),
+                        const SizedBox(width: 4),
+                        Text('Details', style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.w600)),
+                      ]),
                     ),
                   ),
                 ],
-                const SizedBox(height: 12),
-              ],
+              ),
             );
           }),
 
