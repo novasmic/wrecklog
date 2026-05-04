@@ -6127,7 +6127,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
                   PhotoStrip(
                     ownerType: 'sale_proof',
                     ownerId:   part.id,
-                    maxCount:  3,
+                    maxCount:  5,
                   ),
                 ],
               ),
@@ -6562,7 +6562,7 @@ class _MarkSoldPageState extends State<_MarkSoldPage> {
                 PhotoStrip(
                   ownerType: 'sale_proof',
                   ownerId:   widget.part.id,
-                  maxCount:  3,
+                  maxCount:  5,
                 ),
               ],
             ),
