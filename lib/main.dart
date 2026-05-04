@@ -6012,7 +6012,10 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Undo sold?'),
-        content: const Text('This will mark the part as In Stock and clear the sale price and date.'),
+        content: const Text(
+          'This will mark the part as In Stock, clear the sale price and date, '
+          'and delete all shipping proof photos.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
@@ -6029,6 +6032,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
       _part.dateSold = null;
       _part.updatedAt = DateTime.now();
     });
+    unawaited(PhotoStorage.deleteAllForOwner('sale_proof', _part.id));
     final uid = auth.uid;
     final vehicleId = _part.vehicleId;
     if (uid != null && vehicleId != null) {
@@ -6172,6 +6176,16 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
                     ownerType: 'sale_proof',
                     ownerId:   part.id,
                     maxCount:  5,
+                  ),
+                  const Divider(height: 24, color: Colors.white12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: _undoSold,
+                      icon: const Icon(Icons.undo, size: 16),
+                      label: const Text('Undo Sold'),
+                      style: TextButton.styleFrom(foregroundColor: Colors.grey[400]),
+                    ),
                   ),
                 ],
               ),
