@@ -60,6 +60,7 @@ class FirestoreService {
       final id = vehicleJson['id'] as String;
       final data = Map<String, dynamic>.from(vehicleJson)
         ..remove('parts') // parts stored in subcollection
+        ..removeWhere((_, v) => v == null) // preserve web-only fields (e.g. VIN, series entered on web)
         ..['syncedAt'] = FieldValue.serverTimestamp();
       await _vehiclesCol(uid).doc(id).set(data, SetOptions(merge: true));
     } catch (e, st) {
@@ -86,6 +87,7 @@ class FirestoreService {
     try {
       final id = partJson['id'] as String;
       final data = Map<String, dynamic>.from(partJson)
+        ..removeWhere((_, v) => v == null) // preserve web-only fields; use clearPartSale() to explicitly delete
         ..['syncedAt'] = FieldValue.serverTimestamp();
       await _partsCol(uid, vehicleId).doc(id).set(data, SetOptions(merge: true));
     } catch (e, st) {
@@ -193,6 +195,7 @@ class FirestoreService {
 
         final vehicleData = Map<String, dynamic>.from(vJson)
           ..remove('parts')
+          ..removeWhere((_, v) => v == null)
           ..['syncedAt'] = FieldValue.serverTimestamp();
 
         batch.set(
@@ -205,6 +208,7 @@ class FirestoreService {
 
         for (final pJson in parts) {
           final partData = Map<String, dynamic>.from(pJson as Map<String, dynamic>)
+            ..removeWhere((_, v) => v == null)
             ..['syncedAt'] = FieldValue.serverTimestamp();
           batch.set(
             _partsCol(uid, vehicleId).doc(partData['id'] as String),
