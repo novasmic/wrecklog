@@ -183,12 +183,35 @@ class FirestoreService {
   }
 
   // ── Migration — upload all existing local data on first sign-in ────────────
+  //
+  // DANGER: kFirestoreSyncVersion (in main.dart) controls when this runs.
+  // Bumping that constant forces a full re-upload for every existing user.
+  // This function reads Firestore first so it can never overwrite a non-null
+  // cloud value with a local null — but still: do not bump the version number
+  // unless you have a concrete reason and have tested the migration path.
 
   static Future<void> migrateLocalData(
     String uid,
     List<Map<String, dynamic>> vehiclesJson,
   ) async {
     try {
+      // Read existing Firestore data first so we can preserve fields that the
+      // mobile app doesn't manage (e.g. VIN, bid price, series entered on web).
+      // This is defence-in-depth on top of null-stripping: Firestore wins when
+      // local is null, local wins when local has an actual value.
+      final fsVehicles = <String, Map<String, dynamic>>{};
+      final fsParts    = <String, Map<String, dynamic>>{};
+      {
+        final vSnap = await _vehiclesCol(uid).get();
+        for (final vDoc in vSnap.docs) {
+          fsVehicles[vDoc.id] = _stripTimestamps(vDoc.data());
+          final pSnap = await _partsCol(uid, vDoc.id).get();
+          for (final pDoc in pSnap.docs) {
+            fsParts['${vDoc.id}/${pDoc.id}'] = _stripTimestamps(pDoc.data());
+          }
+        }
+      }
+
       var batch = _db.batch();
       int ops = 0;
 
@@ -204,10 +227,10 @@ class FirestoreService {
         final vehicleId = vJson['id'] as String;
         final parts = (vJson['parts'] as List<dynamic>?) ?? [];
 
-        final vehicleData = Map<String, dynamic>.from(vJson)
-          ..remove('parts')
-          ..removeWhere((_, v) => v == null)
-          ..['syncedAt'] = FieldValue.serverTimestamp();
+        final vehicleData = _safeLocalOverFirestore(
+          firestore: fsVehicles[vehicleId],
+          local: Map<String, dynamic>.from(vJson)..remove('parts'),
+        )..['syncedAt'] = FieldValue.serverTimestamp();
 
         batch.set(
           _vehiclesCol(uid).doc(vehicleId),
@@ -218,11 +241,14 @@ class FirestoreService {
         await maybeFlush();
 
         for (final pJson in parts) {
-          final partData = Map<String, dynamic>.from(pJson as Map<String, dynamic>)
-            ..removeWhere((_, v) => v == null)
-            ..['syncedAt'] = FieldValue.serverTimestamp();
+          final partMap = Map<String, dynamic>.from(pJson as Map<String, dynamic>);
+          final partId  = partMap['id'] as String;
+          final partData = _safeLocalOverFirestore(
+            firestore: fsParts['$vehicleId/$partId'],
+            local: partMap,
+          )..['syncedAt'] = FieldValue.serverTimestamp();
           batch.set(
-            _partsCol(uid, vehicleId).doc(partData['id'] as String),
+            _partsCol(uid, vehicleId).doc(partId),
             partData,
             SetOptions(merge: true),
           );
@@ -233,7 +259,6 @@ class FirestoreService {
 
       if (ops > 0) await batch.commit();
 
-      // Mark migration as done so we don't repeat it.
       await _db.collection('users').doc(uid).set(
         {'migratedAt': FieldValue.serverTimestamp()},
         SetOptions(merge: true),
@@ -243,6 +268,19 @@ class FirestoreService {
     } catch (e, st) {
       logError('Firestore migrateLocalData', e, st);
     }
+  }
+
+  // Merges local data over existing Firestore data.
+  // Local non-null values win (they reflect actual user edits on device).
+  // Firestore non-null values are preserved when local is null or absent.
+  static Map<String, dynamic> _safeLocalOverFirestore({
+    required Map<String, dynamic>? firestore,
+    required Map<String, dynamic> local,
+  }) {
+    final localNonNull = Map<String, dynamic>.from(local)
+      ..removeWhere((_, v) => v == null);
+    if (firestore == null) return localNonNull;
+    return {...firestore, ...localNonNull};
   }
 
   /// Returns true if this user has already been migrated.
