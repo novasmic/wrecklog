@@ -6003,6 +6003,38 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
     }
   }
 
+  Future<void> _undoSold() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Undo sold?'),
+        content: const Text('This will mark the part as In Stock and clear the sale price and date.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Undo Sold'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _part.state = PartState.removed;
+      _part.salePriceCents = null;
+      _part.dateSold = null;
+      _part.updatedAt = DateTime.now();
+    });
+    final uid = auth.uid;
+    final vehicleId = _part.vehicleId;
+    if (uid != null && vehicleId != null) {
+      FirestoreService.upsertPart(uid, vehicleId, _part.toJson());
+      FirestoreService.clearPartSale(uid, vehicleId, _part.id);
+    }
+    widget.onPartEdited?.call(_part);
+    if (mounted) Navigator.of(context).pop(_part);
+  }
+
   Future<void> _markSold() async {
     if (_part.state == PartState.sold || _part.state == PartState.scrapped) return;
     bool confirmed = false;
@@ -6066,38 +6098,46 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: canMarkSold
-          ? (canAddListing
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      FloatingActionButton.extended(
-                        heroTag: 'fab_add_listing',
-                        onPressed: _addListing,
-                        backgroundColor: const Color(0xFFE8400A),
-                        icon: const Icon(Icons.link),
-                        label: const Text('Add Listing'),
+      floatingActionButton: part.state == PartState.sold
+          ? FloatingActionButton.extended(
+              heroTag: 'fab_undo_sold',
+              onPressed: _undoSold,
+              backgroundColor: Colors.grey[700],
+              icon: const Icon(Icons.undo),
+              label: const Text('Undo Sold'),
+            )
+          : canMarkSold
+              ? (canAddListing
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          FloatingActionButton.extended(
+                            heroTag: 'fab_add_listing',
+                            onPressed: _addListing,
+                            backgroundColor: const Color(0xFFE8400A),
+                            icon: const Icon(Icons.link),
+                            label: const Text('Add Listing'),
+                          ),
+                          FloatingActionButton.extended(
+                            heroTag: 'fab_mark_sold',
+                            onPressed: _markSold,
+                            backgroundColor: Colors.green,
+                            icon: const Icon(Icons.check_circle_outline),
+                            label: const Text('Mark Sold'),
+                          ),
+                        ],
                       ),
-                      FloatingActionButton.extended(
-                        heroTag: 'fab_mark_sold',
-                        onPressed: _markSold,
-                        backgroundColor: Colors.green,
-                        icon: const Icon(Icons.check_circle_outline),
-                        label: const Text('Mark Sold'),
-                      ),
-                    ],
-                  ),
-                )
-              : FloatingActionButton.extended(
-                  heroTag: 'fab_mark_sold',
-                  onPressed: _markSold,
-                  backgroundColor: Colors.green,
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Mark Sold'),
-                ))
-          : null,
+                    )
+                  : FloatingActionButton.extended(
+                      heroTag: 'fab_mark_sold',
+                      onPressed: _markSold,
+                      backgroundColor: Colors.green,
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('Mark Sold'),
+                    ))
+              : null,
       body: ListView(
         padding: const EdgeInsets.all(kPad),
         children: [

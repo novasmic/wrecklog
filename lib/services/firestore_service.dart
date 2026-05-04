@@ -95,6 +95,17 @@ class FirestoreService {
     }
   }
 
+  static Future<void> clearPartSale(String uid, String vehicleId, String partId) async {
+    try {
+      await _partsCol(uid, vehicleId).doc(partId).update({
+        'salePriceCents': FieldValue.delete(),
+        'dateSold':       FieldValue.delete(),
+      });
+    } catch (e, st) {
+      logError('Firestore clearPartSale', e, st);
+    }
+  }
+
   static Future<void> deletePart(String uid, String vehicleId, String partId) async {
     try {
       await _partsCol(uid, vehicleId).doc(partId).delete();
