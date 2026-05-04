@@ -28,6 +28,7 @@ class FirestoreService {
     try {
       final id = groupJson['id'] as String;
       final data = Map<String, dynamic>.from(groupJson)
+        ..removeWhere((_, v) => v == null)
         ..['syncedAt'] = FieldValue.serverTimestamp();
       await _interchangeCol(uid).doc(id).set(data, SetOptions(merge: true));
     } catch (e, st) {

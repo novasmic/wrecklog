@@ -593,7 +593,7 @@ class _AppShellState extends State<AppShell> {
     // migrateLocalData now reads Firestore first and won't overwrite non-null
     // cloud values — but still: only bump if you have a concrete reason and
     // have tested that the migration produces correct results end-to-end.
-    // Last bumped: 4 (2025-05 — add null-strip fix to sync paths).
+    // Last bumped: 4 (2026-05 — add null-strip fix to sync paths).
     const kFirestoreSyncVersion = 4;
     final prefs = await SharedPreferences.getInstance();
     final lastSync = prefs.getInt('firestore_sync_version') ?? 0;
