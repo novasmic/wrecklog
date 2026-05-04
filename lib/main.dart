@@ -853,7 +853,7 @@ class _AppShellState extends State<AppShell> {
           destinations: const [
             NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
             NavigationDestination(icon: Icon(Icons.directions_car), label: 'Vehicles'),
-            NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
+            NavigationDestination(icon: Icon(Icons.inventory_2_outlined), label: 'Parts'),
             NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Stats'),
             NavigationDestination(icon: Icon(Icons.monitor_outlined), label: 'Web'),
             NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
@@ -8411,12 +8411,12 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
   void initState() {
     super.initState();
     _qCtrl.addListener(_onQueryChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _recompute(); });
   }
 
   @override
   void didUpdateWidget(PartsSearchTab old) {
     super.didUpdateWidget(old);
-    // Re-run search immediately when the vehicle list changes (e.g. a part edited)
     if (old.vehicles != widget.vehicles) _recompute();
   }
 
@@ -8436,15 +8436,18 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
 
   void _recompute() {
     final q = _qCtrl.text.trim().toLowerCase();
-    final newHits = <_PartHit>[];
-
-    // Split into words — all words must match somewhere (AND logic).
     final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final newHits = <_PartHit>[];
 
     for (final v in widget.vehicles) {
       for (final p in v.parts) {
         if (_stateFilter != null && p.state != _stateFilter) continue;
-        if (words.isEmpty) continue;
+
+        if (words.isEmpty) {
+          // No query: show all parts, sorted later by state priority then name.
+          newHits.add(_PartHit(vehicle: v, part: p, score: 1));
+          continue;
+        }
 
         final pn = p.partNumber ?? '';
         final nameHay    = p.name.toLowerCase();
@@ -8463,31 +8466,38 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
           vehicleHay,
         ].join(' ');
 
-        // All words must appear somewhere in the full haystack.
         final allMatch = words.every((w) {
           final nw = normalizePartNumber(w).toLowerCase();
           return fullHay.contains(w) || (nw.isNotEmpty && fullHay.contains(nw));
         });
         if (!allMatch) continue;
 
-        // Score: higher = more relevant.
         final int score;
         final nameAndVehicle = '$nameHay $vehicleHay';
         if (words.every((w) => nameHay.contains(w))) {
-          score = 3; // all words in part name
+          score = 3;
         } else if (words.every((w) => nameAndVehicle.contains(w))) {
-          score = 2; // all words in name + vehicle fields
+          score = 2;
         } else {
-          score = 1; // all words somewhere (notes, location, part number, etc.)
+          score = 1;
         }
-
         newHits.add(_PartHit(vehicle: v, part: p, score: score));
       }
     }
 
+    if (words.isEmpty) {
+      // Sort by state priority (in stock → listed → sold → scrapped), then name.
+      const priority = {PartState.removed: 0, PartState.listed: 1, PartState.sold: 2, PartState.scrapped: 3};
+      newHits.sort((a, b) {
+        final sc = (priority[a.part.state] ?? 0).compareTo(priority[b.part.state] ?? 0);
+        return sc != 0 ? sc : a.part.name.toLowerCase().compareTo(b.part.name.toLowerCase());
+      });
+      if (mounted) setState(() { _hits = newHits; _groups = []; });
+      return;
+    }
+
     final groupMap = <String, List<_PartHit>>{};
     for (final h in newHits) {
-      // Use normalized key for grouping so ABC-123 and ABC123 merge into one group.
       final key = h.part.partNumber == null
           ? ''
           : normalizePartNumber(h.part.partNumber!);
@@ -8514,229 +8524,333 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
     if (mounted) setState(() { _hits = newHits; _groups = newGroups; });
   }
 
+  Color _stateColor(PartState s) => s == PartState.sold
+      ? Colors.green
+      : s == PartState.scrapped
+          ? Colors.grey
+          : s == PartState.listed
+              ? Colors.blue
+              : Colors.white54;
+
+  Widget _stateChip(String label, PartState? state, Color color) {
+    final selected = _stateFilter == state;
+    return GestureDetector(
+      onTap: () { setState(() => _stateFilter = state); _recompute(); },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.18) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: selected ? color.withValues(alpha: 0.7) : Colors.white24),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? color : Colors.white54,
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final q = _qCtrl.text.trim();
+    final hasQuery = q.isNotEmpty;
     final hits   = _hits;
     final groups = _groups;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Search Parts')),
+      appBar: AppBar(title: const Text('Parts')),
       body: Stack(
         children: [
-          SizedBox.expand(
-            child: CustomPaint(painter: _grainPainter),
-          ),
-          ListView(
-            padding: const EdgeInsets.all(kPad),
+          SizedBox.expand(child: CustomPaint(painter: _grainPainter)),
+          Column(
             children: [
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SectionTitle(
-                  title: 'Search',
-                  subtitle: 'Search across part name, number, notes, vehicle make, model, year, trim and engine. Use multiple words to narrow results.',
-                ),
-                const SizedBox(height: 10),
-                TextField(
+              // ── Search bar ─────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(kPad, kPad, kPad, 8),
+                child: TextField(
                   controller: _qCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Search',
-                    hintText: 'e.g. ranger headlight, ford mirror, 2020 turbo, AB39-13005...',
-                    prefixIcon: Icon(Icons.search),
+                  decoration: InputDecoration(
+                    hintText: 'Search by name, number, vehicle…',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: hasQuery
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed: () => _qCtrl.clear(),
+                          )
+                        : null,
+                    isDense: true,
+                    border: const OutlineInputBorder(),
                   ),
-                  // Listener on _qCtrl handles debounced search — no onChanged needed
                 ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<PartState?>(
-                  initialValue: _stateFilter,
-                  decoration: const InputDecoration(labelText: 'Filter by state (optional)'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('All')),
-                    ...PartState.values.map((s) => DropdownMenuItem(value: s, child: Text(s.label))),
+              ),
+              // ── Status filter chips ─────────────────────────────────────
+              SizedBox(
+                height: 36,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: kPad),
+                  children: [
+                    _stateChip('All',      null,              Colors.white70),
+                    const SizedBox(width: 6),
+                    _stateChip('In Stock', PartState.removed, Colors.white54),
+                    const SizedBox(width: 6),
+                    _stateChip('Listed',   PartState.listed,  Colors.blue),
+                    const SizedBox(width: 6),
+                    _stateChip('Sold',     PartState.sold,    Colors.green),
+                    const SizedBox(width: 6),
+                    _stateChip('Scrapped', PartState.scrapped, Colors.grey),
                   ],
-                  onChanged: (v) { setState(() => _stateFilter = v); _recompute(); },
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // ── Empty / no-results states ──────────────────────────────────
-          if (q.isEmpty)
-            AppCard(
-              child: Column(
-                children: [
-                  const Icon(Icons.search, size: 42),
-                  const SizedBox(height: 10),
-                  Text('Type to search',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 6),
-                  const Text('Results appear grouped by part number.'),
-                ],
               ),
-            )
-          else if (groups.isEmpty)
-            AppCard(
-              child: Column(
-                children: [
-                  const Icon(Icons.sentiment_dissatisfied, size: 42),
-                  const SizedBox(height: 10),
-                  Text('No results',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 6),
-                  const Text('Try a different term (name, location, identifier, part number).'),
-                ],
-              ),
-            )
-          else ...[
-            // Summary line
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                '${groups.length} group${groups.length == 1 ? '' : 's'} • ${hits.length} part${hits.length == 1 ? '' : 's'}',
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
-              ),
-            ),
-            // ── Group rows ─────────────────────────────────────────────
-            ...groups.map((g) {
-              final label = g.partNumber.isEmpty ? 'No part number' : g.partNumber;
-              final name  = g.commonName;
-              final isSingle = g.hits.length == 1;
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Card(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(kRadius),
-                    onTap: () {
-                      if (isSingle && g.hits.isNotEmpty) {
-                        // Only one hit — go straight to detail
-                        final hit = g.hits.first;
-                        Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => PartDetailScreen(
-                            part: hit.part,
-                            vehicle: hit.vehicle,
-                            onPartEdited: widget.onPartEdited == null
-                                ? null
-                                : (updated) => widget.onPartEdited!(updated, hit.vehicle),
-                          ),
-                        ));
-                      } else {
-                        Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => _SearchGroupDrillScreen(
-                            group: g,
-                            onPartEdited: widget.onPartEdited,
-                          ),
-                        ));
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Part number (primary)
-                                Text(
-                                  label,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 15,
-                                    fontFamily: g.partNumber.isEmpty
-                                        ? null
-                                        : 'monospace',
-                                    color: g.partNumber.isEmpty
-                                        ? Colors.white38
-                                        : null,
-                                    fontStyle: g.partNumber.isEmpty
-                                        ? FontStyle.italic
-                                        : null,
-                                  ),
-                                ),
-                                // Part name (if consistent)
-                                if (name.isNotEmpty) ...[
-                                  const SizedBox(height: 3),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          name,
-                                          style: const TextStyle(
-                                              color: Colors.white54, fontSize: 13),
-                                        ),
-                                      ),
-                                      if (g.commonSide.isNotEmpty) ...[
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.08),
-                                            borderRadius: BorderRadius.circular(10),
-                                          ),
-                                          child: Text(
-                                            g.commonSide,
-                                            style: const TextStyle(fontSize: 11, color: Colors.white54),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE8700A).withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                      color: const Color(0xFFE8700A)
-                                          .withValues(alpha: 0.4)),
-                                ),
-                                child: Text(
-                                  'Qty ${g.qty}',
-                                  style: const TextStyle(
-                                    color: Color(0xFFE8700A),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${g.hits.length} part${g.hits.length == 1 ? '' : 's'}',
-                                style: const TextStyle(
-                                    color: Colors.white38, fontSize: 11),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.chevron_right,
-                              size: 18, color: Colors.white24),
-                        ],
-                      ),
+              const SizedBox(height: 8),
+              // ── Count line ──────────────────────────────────────────────
+              if (hits.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      hasQuery
+                          ? '${groups.length} group${groups.length == 1 ? '' : 's'} · ${hits.length} part${hits.length == 1 ? '' : 's'}'
+                          : '${hits.length} part${hits.length == 1 ? '' : 's'}',
+                      style: const TextStyle(color: Colors.white38, fontSize: 12),
                     ),
                   ),
                 ),
-              );
-            }),
-          ],
+              // ── Parts list ──────────────────────────────────────────────
+              Expanded(
+                child: hits.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(hasQuery ? Icons.sentiment_dissatisfied : Icons.inventory_2_outlined,
+                                size: 48, color: Colors.white24),
+                            const SizedBox(height: 12),
+                            Text(
+                              hasQuery ? 'No results' : 'No parts yet',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w900),
+                            ),
+                            if (hasQuery) ...[
+                              const SizedBox(height: 6),
+                              const Text('Try a different search term.',
+                                  style: TextStyle(color: Colors.white54)),
+                            ],
+                          ],
+                        ),
+                      )
+                    : !hasQuery
+                        // ── Flat list: all parts, sorted by state then name ───
+                        ? ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, kPad),
+                            itemCount: hits.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (ctx, i) {
+                              final hit     = hits[i];
+                              final part    = hit.part;
+                              final vehicle = hit.vehicle;
+                              final sc      = _stateColor(part.state);
+                              return Card(
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(kRadius),
+                                  onTap: () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => PartDetailScreen(
+                                        part: part,
+                                        vehicle: vehicle,
+                                        onPartEdited: widget.onPartEdited == null
+                                            ? null
+                                            : (updated) => widget.onPartEdited!(updated, vehicle),
+                                      ),
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(part.name,
+                                                  style: const TextStyle(
+                                                      fontWeight: FontWeight.w700, fontSize: 15)),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                '${vehicle.year} ${vehicle.make} ${vehicle.model}'
+                                                    '${part.location != null ? '  ·  ${part.location}' : ''}',
+                                                style: const TextStyle(
+                                                    color: Colors.white54, fontSize: 13),
+                                              ),
+                                              if (part.partNumber != null) ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  part.partNumber!,
+                                                  style: const TextStyle(
+                                                      color: Colors.white38,
+                                                      fontSize: 12,
+                                                      fontFamily: 'monospace'),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: sc.withValues(alpha: 0.12),
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(
+                                                    color: sc.withValues(alpha: 0.4)),
+                                              ),
+                                              child: Text(
+                                                part.state.label,
+                                                style: TextStyle(
+                                                    color: sc,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600),
+                                              ),
+                                            ),
+                                            if (part.askingPriceCents != null) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                formatMoneyFromCents(part.askingPriceCents!),
+                                                style: const TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(Icons.chevron_right,
+                                            size: 18, color: Colors.white24),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          )
+                        // ── Grouped search results ───────────────────────────
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(kPad, 0, kPad, kPad),
+                            itemCount: groups.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (ctx, i) {
+                              final g = groups[i];
+                              final label = g.partNumber.isEmpty ? 'No part number' : g.partNumber;
+                              final name  = g.commonName;
+                              final isSingle = g.hits.length == 1;
+                              return Card(
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(kRadius),
+                                  onTap: () {
+                                    if (isSingle && g.hits.isNotEmpty) {
+                                      final hit = g.hits.first;
+                                      Navigator.of(context).push(MaterialPageRoute(
+                                        builder: (_) => PartDetailScreen(
+                                          part: hit.part,
+                                          vehicle: hit.vehicle,
+                                          onPartEdited: widget.onPartEdited == null
+                                              ? null
+                                              : (updated) => widget.onPartEdited!(updated, hit.vehicle),
+                                        ),
+                                      ));
+                                    } else {
+                                      Navigator.of(context).push(MaterialPageRoute(
+                                        builder: (_) => _SearchGroupDrillScreen(
+                                          group: g,
+                                          onPartEdited: widget.onPartEdited,
+                                        ),
+                                      ));
+                                    }
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                label,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 15,
+                                                  fontFamily: g.partNumber.isEmpty ? null : 'monospace',
+                                                  color: g.partNumber.isEmpty ? Colors.white38 : null,
+                                                  fontStyle: g.partNumber.isEmpty ? FontStyle.italic : null,
+                                                ),
+                                              ),
+                                              if (name.isNotEmpty) ...[
+                                                const SizedBox(height: 3),
+                                                Row(children: [
+                                                  Expanded(
+                                                    child: Text(name,
+                                                        style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                                                  ),
+                                                  if (g.commonSide.isNotEmpty) ...[
+                                                    const SizedBox(width: 6),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white.withValues(alpha: 0.08),
+                                                        borderRadius: BorderRadius.circular(10),
+                                                      ),
+                                                      child: Text(g.commonSide,
+                                                          style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                                                    ),
+                                                  ],
+                                                ]),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFE8700A).withValues(alpha: 0.12),
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: const Color(0xFFE8700A).withValues(alpha: 0.4)),
+                                              ),
+                                              child: Text('Qty ${g.qty}',
+                                                  style: const TextStyle(
+                                                      color: Color(0xFFE8700A),
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w700)),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text('${g.hits.length} part${g.hits.length == 1 ? '' : 's'}',
+                                                style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                          ],
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(Icons.chevron_right, size: 18, color: Colors.white24),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+              ),
             ],
           ),
         ],
