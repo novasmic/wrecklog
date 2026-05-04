@@ -6005,43 +6005,25 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
 
   Future<void> _markSold() async {
     if (_part.state == PartState.sold || _part.state == PartState.scrapped) return;
-    final ctrl = TextEditingController(
-      text: _part.salePriceCents == null ? '' : (_part.salePriceCents! / 100).toStringAsFixed(2),
-    );
-    final cents = await showDialog<int?>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Mark as sold'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Sold price',
-            hintText: 'e.g. 100.00',
-            prefixText: '\$',
-          ),
+    bool confirmed = false;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _MarkSoldPage(
+          part: _part,
+          onConfirm: (cents) {
+            confirmed = true;
+            setState(() {
+              _part.state = PartState.sold;
+              _part.salePriceCents = cents;
+              _part.dateSold ??= DateTime.now();
+              for (final l in _part.listings) { l.isLive = false; }
+            });
+          },
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              final c = parseMoneyToCents(ctrl.text) ?? 0;
-              Navigator.pop(ctx, c);
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
-    ctrl.dispose();
-    if (cents == null || !mounted) return;
-    setState(() {
-      _part.state = PartState.sold;
-      _part.salePriceCents = cents;
-      _part.dateSold ??= DateTime.now();
-      for (final l in _part.listings) { l.isLive = false; }
-    });
+    if (!confirmed || !mounted) return;
     AnalyticsService.logPartSold(_part.name, _part.salePriceCents, _part.category);
     // earned_banner_seen — fires once, the first time a user sees the earned banner
     final earnedPrefs = await SharedPreferences.getInstance();
@@ -6128,6 +6110,30 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
             ),
           ),
           const SizedBox(height: kPad),
+
+          // ── Shipping proof photos (sold parts only) ──────────────────────
+          if (part.state == PartState.sold) ...[
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionTitle(title: 'Shipping Proof'),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Photos of packaging, address label & condition for dispute cover.',
+                    style: TextStyle(color: Colors.white60, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  PhotoStrip(
+                    ownerType: 'sale_proof',
+                    ownerId:   part.id,
+                    maxCount:  3,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: kPad),
+          ],
 
           // ── Identification ──────────────────────────────────────────────
           AppCard(
@@ -6456,6 +6462,112 @@ class _DetailRow extends StatelessWidget {
                   const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// _MarkSoldPage — full-screen Mark as Sold flow with proof photo capture
+// ═════════════════════════════════════════════════════════════════════════════
+class _MarkSoldPage extends StatefulWidget {
+  final Part part;
+  final void Function(int? cents) onConfirm;
+  const _MarkSoldPage({required this.part, required this.onConfirm});
+
+  @override
+  State<_MarkSoldPage> createState() => _MarkSoldPageState();
+}
+
+class _MarkSoldPageState extends State<_MarkSoldPage> {
+  late final TextEditingController _priceCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.part.salePriceCents;
+    _priceCtrl = TextEditingController(
+      text: existing != null ? (existing / 100).toStringAsFixed(2) : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    final cents = parseMoneyToCents(_priceCtrl.text);
+    widget.onConfirm(cents);
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Mark as Sold'),
+        actions: [
+          TextButton(
+            onPressed: _confirm,
+            child: const Text('Save',
+                style: TextStyle(color: Colors.green, fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab_confirm_sold',
+        onPressed: _confirm,
+        backgroundColor: Colors.green,
+        icon: const Icon(Icons.check_circle_outline),
+        label: const Text('Mark as Sold'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(kPad),
+        children: [
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SectionTitle(title: 'Sale Price'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _priceCtrl,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Sold price (optional)',
+                    hintText: 'e.g. 100.00',
+                    prefixText: '\$ ',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: kPad),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SectionTitle(title: 'Shipping Proof Photos'),
+                const SizedBox(height: 4),
+                const Text(
+                  'Take photos of packaging, address label & condition for dispute cover.',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                PhotoStrip(
+                  ownerType: 'sale_proof',
+                  ownerId:   widget.part.id,
+                  maxCount:  3,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 100), // FAB clearance
         ],
       ),
     );
