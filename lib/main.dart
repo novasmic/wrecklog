@@ -4758,6 +4758,7 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
         l.isLive = false;
       }
     });
+    if (auth.uid != null) FirestoreService.upsertPart(auth.uid!, _v.id, p.toJson());
   }
 
   void _setScrapped(Part p) {
@@ -4799,6 +4800,10 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
       p.dateSold = null;   // must clear — _partWorkflowStatus checks dateSold != null
       p.updatedAt = DateTime.now();
     });
+    if (auth.uid != null) {
+      FirestoreService.upsertPart(auth.uid!, _v.id, p.toJson());
+      FirestoreService.clearPartSale(auth.uid!, _v.id, p.id);
+    }
   }
 
   Future<void> _duplicatePart(Part source) async {
@@ -4939,19 +4944,23 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     );
     ctrl.dispose();
     if (cents == null || !mounted) return;
+    final toSync = _v.parts.where((p) => _selectedPartIds.contains(p.id)).toList();
     setState(() {
-      for (final p in _v.parts) {
-        if (_selectedPartIds.contains(p.id)) {
-          p.state = PartState.sold;
-          p.salePriceCents = cents;
-          p.dateSold ??= DateTime.now();
-          p.updatedAt = DateTime.now();
-          for (final l in p.listings) { l.isLive = false; }
-        }
+      for (final p in toSync) {
+        p.state = PartState.sold;
+        p.salePriceCents = cents;
+        p.dateSold ??= DateTime.now();
+        p.updatedAt = DateTime.now();
+        for (final l in p.listings) { l.isLive = false; }
       }
       _selectMode = false;
       _selectedPartIds.clear();
     });
+    if (auth.uid != null) {
+      for (final p in toSync) {
+        FirestoreService.upsertPart(auth.uid!, _v.id, p.toJson());
+      }
+    }
   }
 
   void _bulkMarkScrapped() {
@@ -6068,6 +6077,7 @@ class _PartDetailScreenState extends State<PartDetailScreen> {
               _part.state = PartState.sold;
               _part.salePriceCents = cents;
               _part.dateSold ??= DateTime.now();
+              _part.updatedAt = DateTime.now();
               for (final l in _part.listings) { l.isLive = false; }
             });
           },

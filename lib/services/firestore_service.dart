@@ -101,6 +101,7 @@ class FirestoreService {
       await _partsCol(uid, vehicleId).doc(partId).update({
         'salePriceCents': FieldValue.delete(),
         'dateSold':       FieldValue.delete(),
+        'syncedAt':       FieldValue.serverTimestamp(),
       });
     } catch (e, st) {
       logError('Firestore clearPartSale', e, st);
