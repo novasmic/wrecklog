@@ -5043,12 +5043,15 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      color: accentColor,
-                    )),
+                Flexible(
+                  child: Text(title,
+                      maxLines: 2,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: accentColor,
+                      )),
+                ),
                 if (!hideCount) ...[
                   const SizedBox(width: 8),
                   Text('${parts.length}',
@@ -5121,8 +5124,8 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
     final potential = needsListing.fold<int>(0, (s, p) => s + (p.askingPriceCents ?? 0));
     final n = needsListing.length;
     final needsTitle = potential > 0
-        ? '$n ${n == 1 ? 'part' : 'parts'} need listing  —  potential ${_HomeStats.fmt(potential)} revenue'
-        : '$n ${n == 1 ? 'part' : 'parts'} need listing';
+        ? '$n ${n == 1 ? 'part needs' : 'parts need'} listing  —  potential ${_HomeStats.fmt(potential)} revenue'
+        : '$n ${n == 1 ? 'part needs' : 'parts need'} listing';
 
     return [
       if (needsListing.isNotEmpty)
