@@ -755,7 +755,7 @@ class _AppShellState extends State<AppShell> {
   Future<void> _doAddVehicle() async {
     if (!isPro && _vehicles.length >= kFreeVehicleLimit) {
       await showRatingDialog(context);
-      if (!context.mounted) return;
+      if (!mounted) return;
       await showProPaywall(
         context,
         title: 'Free limit reached',
@@ -766,9 +766,9 @@ class _AppShellState extends State<AppShell> {
     final created = await Navigator.of(context).push<Vehicle>(
       MaterialPageRoute(builder: (_) => const AddVehicleScreen()),
     );
-    if (created == null || !context.mounted) return;
+    if (created == null || !mounted) return;
     await _addVehicle(created);
-    if (!context.mounted) return;
+    if (!mounted) return;
     final updated = await Navigator.of(context).push<Vehicle>(
       MaterialPageRoute(builder: (_) => VehicleDetailScreen(vehicle: created, allVehicles: _vehicles)),
     );
@@ -3144,37 +3144,48 @@ class _VehicleDetailsSheet extends StatelessWidget {
     rows.add(_DetailRow(icon: Icons.flag_outlined, label: 'Status', value: vehicle.status.label));
     rows.add(_DetailRow(icon: Icons.calendar_today_outlined, label: 'Acquired',
         value: '${vehicle.acquiredAt.day}/${vehicle.acquiredAt.month}/${vehicle.acquiredAt.year}'));
-    if (vehicle.itemType != ItemType.other)
+    if (vehicle.itemType != ItemType.other) {
       rows.add(_DetailRow(icon: Icons.category_outlined, label: 'Type', value: vehicle.itemType.label));
-    if (vehicle.color.isNotEmpty)
+    }
+    if (vehicle.color.isNotEmpty) {
       rows.add(_DetailRow(icon: Icons.palette_outlined, label: 'Colour', value: vehicle.color));
-    if ((vehicle.identifier ?? '').isNotEmpty)
+    }
+    if ((vehicle.identifier ?? '').isNotEmpty) {
       rows.add(_DetailRow(icon: Icons.tag, label: 'VIN / Rego / ID', value: vehicle.identifier!));
-    if ((vehicle.engine ?? '').isNotEmpty)
+    }
+    if ((vehicle.engine ?? '').isNotEmpty) {
       rows.add(_DetailRow(icon: Icons.settings_outlined, label: 'Engine', value: vehicle.engine!));
-    if ((vehicle.transmission ?? '').isNotEmpty)
+    }
+    if ((vehicle.transmission ?? '').isNotEmpty) {
       rows.add(_DetailRow(icon: Icons.sync_alt, label: 'Transmission', value: vehicle.transmission!));
-    if ((vehicle.drivetrain ?? '').isNotEmpty)
+    }
+    if ((vehicle.drivetrain ?? '').isNotEmpty) {
       rows.add(_DetailRow(icon: Icons.directions_car_outlined, label: 'Drivetrain', value: vehicle.drivetrain!));
+    }
     if (vehicle.usageValue != null) {
       final unitLabel = vehicle.usageUnit == 'hours' ? 'Hours' : vehicle.usageUnit == 'miles' ? 'Miles' : 'Kilometres';
       rows.add(_DetailRow(icon: Icons.speed_outlined, label: unitLabel,
           value: '${_formatUsage(vehicle.usageValue!)} ${vehicle.usageUnit}'));
     }
     if (vehicle.hasCostBreakdown) {
-      if (vehicle.bidPriceCents != null)
+      if (vehicle.bidPriceCents != null) {
         rows.add(_DetailRow(icon: Icons.gavel, label: 'Bid price', value: formatMoneyFromCents(vehicle.bidPriceCents!)));
-      if (vehicle.auctionFeesCents != null)
+      }
+      if (vehicle.auctionFeesCents != null) {
         rows.add(_DetailRow(icon: Icons.receipt_outlined, label: 'Auction fees', value: formatMoneyFromCents(vehicle.auctionFeesCents!)));
-      if (vehicle.transportCents != null)
+      }
+      if (vehicle.transportCents != null) {
         rows.add(_DetailRow(icon: Icons.local_shipping_outlined, label: 'Transport', value: formatMoneyFromCents(vehicle.transportCents!)));
-      if (vehicle.purchasePriceCents != null)
+      }
+      if (vehicle.purchasePriceCents != null) {
         rows.add(_DetailRow(icon: Icons.attach_money, label: 'Total cost', value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
+      }
     } else if (vehicle.purchasePriceCents != null) {
       rows.add(_DetailRow(icon: Icons.attach_money, label: 'Purchase price', value: formatMoneyFromCents(vehicle.purchasePriceCents!)));
     }
-    if ((vehicle.notes ?? '').trim().isNotEmpty)
+    if ((vehicle.notes ?? '').trim().isNotEmpty) {
       rows.add(_DetailRow(icon: Icons.notes_outlined, label: 'Notes', value: vehicle.notes!.trim()));
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
