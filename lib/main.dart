@@ -5198,7 +5198,13 @@ class _VehicleDetailScreenState extends State<VehicleDetailScreen>
             ),
             child: Column(
               children: [
-                Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: color)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: color)),
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.45))),
               ],
@@ -9196,7 +9202,13 @@ class _StatsTabState extends State<StatsTab> {
             ),
             child: Column(
               children: [
-                Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: color)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: color)),
+                  ),
+                ),
                 const SizedBox(height: 3),
                 Text(label, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
                 if (onTap != null)
