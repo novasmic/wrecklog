@@ -5680,7 +5680,7 @@ class PartListRow extends StatelessWidget {
     final source    = _partSourceLine(vehicle);
     final state     = part.state;
     final stateColor = state == PartState.sold
-        ? Colors.green
+        ? const Color(0xFFE8700A)
         : state == PartState.scrapped
             ? Colors.grey
             : state == PartState.listed
@@ -6794,7 +6794,7 @@ class PartCard extends StatelessWidget {
     final (badgeLabel, badgeColor, badgeFilled) = isScrapped
         ? ('SCRAPPED',      Colors.red,                    true)
         : isSold
-            ? ('Sold',          Colors.green,              false)
+            ? ('Sold',          const Color(0xFFE8700A),   false)
             : isListed
                 ? ('Listed',        Colors.green,          false)
                 : ('Needs Listing', const Color(0xFFE8400A), true);
@@ -8613,7 +8613,7 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
   }
 
   Color _stateColor(PartState s) => s == PartState.sold
-      ? Colors.green
+      ? const Color(0xFFE8700A)
       : s == PartState.scrapped
           ? Colors.grey
           : s == PartState.listed
@@ -8690,7 +8690,7 @@ class _PartsSearchTabState extends State<PartsSearchTab> {
                     const SizedBox(width: 6),
                     _stateChip('Listed',   PartState.listed,  Colors.blue),
                     const SizedBox(width: 6),
-                    _stateChip('Sold',     PartState.sold,    Colors.green),
+                    _stateChip('Sold',     PartState.sold,    const Color(0xFFE8700A)),
                     const SizedBox(width: 6),
                     _stateChip('Scrapped', PartState.scrapped, Colors.grey),
                   ],
